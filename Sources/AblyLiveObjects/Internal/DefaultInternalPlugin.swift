@@ -21,15 +21,15 @@ internal final class DefaultInternalPlugin: NSObject, AblyPlugin.LiveObjectsInte
     ///
     /// We expect this value to have been previously set by ``prepare(_:)``.
     internal static func objectsProperty(for channel: ARTRealtimeChannel, pluginAPI: AblyPlugin.PluginAPIProtocol) -> DefaultRealtimeObjects {
-        let pluginChannel = pluginAPI.channel(forPublicRealtimeChannel: channel)
-        return realtimeObjects(for: pluginChannel, pluginAPI: pluginAPI)
+        let underlyingObjects = pluginAPI.underlyingObjects(forPublicRealtimeChannel: channel)
+        return realtimeObjects(for: underlyingObjects.channel, pluginAPI: pluginAPI)
     }
 
     /// Retrieves the `RealtimeObjects` for this channel.
     ///
     /// We expect this value to have been previously set by ``prepare(_:)``.
     private static func realtimeObjects(for channel: AblyPlugin.RealtimeChannel, pluginAPI: AblyPlugin.PluginAPIProtocol) -> DefaultRealtimeObjects {
-        guard let pluginData = pluginAPI.pluginDataValue(forKey: pluginDataKey, channel: channel) else {
+        guard let pluginData = channel.pluginDataValue(forKey: pluginDataKey) else {
             // InternalPlugin.prepare was not called
             fatalError("To access LiveObjects functionality, you must pass the LiveObjects plugin in the client options when creating the ARTRealtime instance: `clientOptions.plugins = [.liveObjects: AblyLiveObjects.Plugin.self]`")
         }
@@ -42,12 +42,11 @@ internal final class DefaultInternalPlugin: NSObject, AblyPlugin.LiveObjectsInte
 
     // Populates the channel's `objects` property.
     internal func prepare(_ channel: AblyPlugin.RealtimeChannel) {
-        let logger = pluginAPI.logger(for: channel)
-
+        let logger = channel.logger
         logger.log("LiveObjects.DefaultInternalPlugin received prepare(_:)", level: .debug)
         let coreSDK = DefaultCoreSDK(channel: channel, pluginAPI: pluginAPI)
         let liveObjects = DefaultRealtimeObjects(coreSDK: coreSDK, logger: logger)
-        pluginAPI.setPluginDataValue(liveObjects, forKey: Self.pluginDataKey, channel: channel)
+        channel.setPluginDataValue(liveObjects, forKey: Self.pluginDataKey)
     }
 
     /// Retrieves the internally-typed `objects` property for the channel.
@@ -141,10 +140,7 @@ internal final class DefaultInternalPlugin: NSObject, AblyPlugin.LiveObjectsInte
         let objectMessageBoxes: [ObjectMessageBox<OutboundObjectMessage>] = objectMessages.map { .init(objectMessage: $0) }
 
         try await withCheckedContinuation { (continuation: CheckedContinuation<Result<Void, InternalError>, _>) in
-            pluginAPI.sendObject(
-                withObjectMessages: objectMessageBoxes,
-                channel: channel,
-            ) { error in
+            channel.sendObject(withObjectMessages: objectMessageBoxes) { error in
                 if let error {
                     continuation.resume(returning: .failure(error.toInternalError()))
                 } else {
