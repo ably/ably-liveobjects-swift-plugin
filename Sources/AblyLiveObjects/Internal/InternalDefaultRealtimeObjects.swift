@@ -113,20 +113,107 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectPool
         }
     }
 
-    internal func createMap(entries _: [String: LiveMapValue]) async throws(ARTErrorInfo) -> any LiveMap {
-        notYetImplemented()
+    internal func createMap(entries: [String: LiveMapValue], coreSDK: CoreSDK) async throws(ARTErrorInfo) -> any LiveMap {
+        do throws(InternalError) {
+            let internalEntries: [String: InternalLiveMapValue] = entries.mapValues { .init(liveMapValue: $0) }
+
+            // RTO11d
+            do {
+                try coreSDK.validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "RealtimeObjects.createMap")
+            } catch {
+                throw error.toInternalError()
+            }
+
+            // RTO11f
+            // TODO: This is a stopgap; change to use server time per RTO11f5 (https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/50)
+            let timestamp = clock.now
+            let creationOperation = ObjectCreationHelpers.creationOperationForLiveMap(
+                entries: internalEntries,
+                timestamp: timestamp,
+            )
+
+            // RTO11g
+            try await coreSDK.publish(objectMessages: [creationOperation.objectMessage])
+
+            // RTO11h
+            let internalMap = mutex.withLock {
+                mutableState.objectsPool.getOrCreateMap(
+                    creationOperation: creationOperation,
+                    logger: logger,
+                    userCallbackQueue: userCallbackQueue,
+                    clock: clock,
+                )
+            }
+
+            return PublicObjectsStore.shared.getOrCreateMap(
+                proxying: internalMap,
+                creationArgs: .init(
+                    coreSDK: coreSDK,
+                    delegate: self,
+                    logger: logger,
+                ),
+            )
+        } catch {
+            throw error.toARTErrorInfo()
+        }
     }
 
-    internal func createMap() async throws(ARTErrorInfo) -> any LiveMap {
-        notYetImplemented()
+    internal func createMap(coreSDK: CoreSDK) async throws(ARTErrorInfo) -> any LiveMap {
+        // RTO11f4b
+        try await createMap(entries: [:], coreSDK: coreSDK)
     }
 
-    internal func createCounter(count _: Double) async throws(ARTErrorInfo) -> any LiveCounter {
-        notYetImplemented()
+    internal func createCounter(count: Double, coreSDK: CoreSDK) async throws(ARTErrorInfo) -> any LiveCounter {
+        do throws(InternalError) {
+            // RTO12d
+            do {
+                try coreSDK.validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "RealtimeObjects.createMap")
+            } catch {
+                throw error.toInternalError()
+            }
+
+            // RTO12f1
+            if !count.isFinite {
+                throw LiveObjectsError.counterInitialValueInvalid(value: count).toARTErrorInfo().toInternalError()
+            }
+
+            // RTO12f
+
+            // TODO: This is a stopgap; change to use server time per RTO12f5 (https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/50)
+            let timestamp = clock.now
+            let creationOperation = ObjectCreationHelpers.creationOperationForLiveCounter(
+                count: count,
+                timestamp: timestamp,
+            )
+
+            // RTO12g
+            try await coreSDK.publish(objectMessages: [creationOperation.objectMessage])
+
+            // RTO12h
+            let internalCounter = mutex.withLock {
+                mutableState.objectsPool.getOrCreateCounter(
+                    creationOperation: creationOperation,
+                    logger: logger,
+                    userCallbackQueue: userCallbackQueue,
+                    clock: clock,
+                )
+            }
+
+            return PublicObjectsStore.shared.getOrCreateCounter(
+                proxying: internalCounter,
+                creationArgs: .init(
+                    coreSDK: coreSDK,
+                    logger: logger,
+                ),
+            )
+        } catch {
+            throw error.toARTErrorInfo()
+        }
     }
 
-    internal func createCounter() async throws(ARTErrorInfo) -> any LiveCounter {
-        notYetImplemented()
+    internal func createCounter(coreSDK: CoreSDK) async throws(ARTErrorInfo) -> any LiveCounter {
+        // RTO12f2a
+        try await createCounter(count: 0, coreSDK: coreSDK)
     }
 
     internal func batch(callback _: sending BatchCallback) async throws {
