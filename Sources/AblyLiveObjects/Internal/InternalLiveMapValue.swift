@@ -6,6 +6,37 @@ internal enum InternalLiveMapValue: Sendable, Equatable {
     case liveMap(InternalDefaultLiveMap)
     case liveCounter(InternalDefaultLiveCounter)
 
+    // MARK: - Representation in the Realtime protocol
+
+    // TODO: document — it's RTO11f4 (for createMap) and RTLM20e4 (for set)
+    internal var toObjectData: ObjectData {
+        // TOOD add
+        // RTO11f4c1: Create an ObjectsMapEntry for the current value
+        switch self {
+        case let .primitive(primitiveValue):
+            switch primitiveValue {
+            case let .bool(value):
+                .init(boolean: value)
+            case let .data(value):
+                .init(bytes: value)
+            case let .number(value):
+                .init(number: NSNumber(value: value))
+            case let .string(value):
+                .init(string: value)
+            case let .jsonArray(value):
+                .init(json: .array(value))
+            case let .jsonObject(value):
+                .init(json: .object(value))
+            }
+        case let .liveMap(liveMap):
+            // RTO11f4c1a: If the value is of type LiveMap, set ObjectsMapEntry.data.objectId to the objectId of that object
+            .init(objectId: liveMap.objectID)
+        case let .liveCounter(liveCounter):
+            // RTO11f4c1a: If the value is of type LiveCounter, set ObjectsMapEntry.data.objectId to the objectId of that object
+            .init(objectId: liveCounter.objectID)
+        }
+    }
+
     // MARK: - Convenience getters for associated values
 
     /// If this `InternalLiveMapValue` has case `primitive`, this returns the associated value. Else, it returns `nil`.
