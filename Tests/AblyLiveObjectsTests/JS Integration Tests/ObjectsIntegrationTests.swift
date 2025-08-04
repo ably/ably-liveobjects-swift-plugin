@@ -213,25 +213,44 @@ private let countersFixtures: [(name: String, count: Double?)] = [
 
 /// The output of `forScenarios`. One element of the one-dimensional arguments array that is passed to a Swift Testing test.
 private struct TestCase<Context>: Identifiable, CustomStringConvertible {
+    init(disabled: Bool, scenario: TestScenario<Context>, baseOptions: ClientHelper.PartialClientOptions, baseChannelName: String) {
+        self.disabled = disabled
+        self.scenario = scenario
+        self.baseOptions = baseOptions
+        self.baseChannelName = baseChannelName
+    }
+
     var disabled: Bool
     var scenario: TestScenario<Context>
-    var options: ClientHelper.PartialClientOptions
-    var channelName: String
+    private var baseOptions: ClientHelper.PartialClientOptions
+    private var baseChannelName: String
 
     /// This `Identifiable` conformance allows us to re-run individual test cases from the Xcode UI (https://developer.apple.com/documentation/testing/parameterizedtesting#Run-selected-test-cases)
     var id: TestCaseID {
-        .init(description: scenario.description, options: options)
+        .init(description: scenario.description, options: baseOptions)
     }
 
     /// This seems to determine the nice name that you see for this when it's used as a test case parameter. (I can't see anywhere that this is documented; found it by experimentation).
     var description: String {
         var result = scenario.description
 
-        if let useBinaryProtocol = options.useBinaryProtocol {
+        if let useBinaryProtocol = baseOptions.useBinaryProtocol {
             result += " (\(useBinaryProtocol ? "binary" : "text"))"
         }
 
         return result
+    }
+
+    /// Generates a unique channel name based on ``baseChannelName``.
+    func generateUniqueChannelName(for execution: borrowing TestCaseExecution) -> String {
+        "\(execution.id) \(baseChannelName)"
+    }
+
+    /// Generates client options based on ``baseOptions``, so that the log messages emitted by a client identify the test execution in which the client created.
+    func options(for execution: borrowing TestCaseExecution) -> ClientHelper.PartialClientOptions {
+        var options = baseOptions
+        options.logIdentifier = execution.id.uuidString
+        return options
     }
 }
 
@@ -260,12 +279,12 @@ private func forScenarios<Context>(_ scenarios: [TestScenario<Context>]) -> [Tes
                 return .init(
                     disabled: scenario.disabled,
                     scenario: scenario,
-                    options: clientOptions,
-                    channelName: "\(scenario.description) \(useBinaryProtocol ? "binary" : "text")",
+                    baseOptions: clientOptions,
+                    baseChannelName: "\(scenario.description) \(useBinaryProtocol ? "binary" : "text")",
                 )
             }
         } else {
-            return [.init(disabled: scenario.disabled, scenario: scenario, options: clientOptions, channelName: scenario.description)]
+            return [.init(disabled: scenario.disabled, scenario: scenario, baseOptions: clientOptions, baseChannelName: scenario.description)]
         }
     }
     .flatMap(\.self)
@@ -3205,27 +3224,33 @@ private struct ObjectsIntegrationTests {
             return
         }
 
-        let objectsHelper = try await ObjectsHelper()
-        let client = try await realtimeWithObjects(options: testCase.options)
+        let testCaseExecution = TestCaseExecution(description: testCase.description)
+        let options = testCase.options(for: testCaseExecution)
+        let channelName = testCase.generateUniqueChannelName(for: testCaseExecution)
 
-        try await monitorConnectionThenCloseAndFinishAsync(client) {
-            let channel = client.channels.get(testCase.channelName, options: channelOptionsWithObjects())
-            let objects = channel.objects
+        try await testCaseExecution.execute {
+            let objectsHelper = try await ObjectsHelper()
+            let client = try await realtimeWithObjects(options: options)
 
-            try await channel.attachAsync()
-            let root = try await objects.getRoot()
+            try await monitorConnectionThenCloseAndFinishAsync(client) {
+                let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+                let objects = channel.objects
 
-            try await testCase.scenario.action(
-                .init(
-                    objects: objects,
-                    root: root,
-                    objectsHelper: objectsHelper,
-                    channelName: testCase.channelName,
-                    channel: channel,
-                    client: client,
-                    clientOptions: testCase.options,
-                ),
-            )
+                try await channel.attachAsync()
+                let root = try await objects.getRoot()
+
+                try await testCase.scenario.action(
+                    .init(
+                        objects: objects,
+                        root: root,
+                        objectsHelper: objectsHelper,
+                        channelName: channelName,
+                        channel: channel,
+                        client: client,
+                        clientOptions: options,
+                    ),
+                )
+            }
         }
     }
 
@@ -3660,59 +3685,65 @@ private struct ObjectsIntegrationTests {
             return
         }
 
-        let objectsHelper = try await ObjectsHelper()
-        let client = try await realtimeWithObjects(options: testCase.options)
+        let testCaseExecution = TestCaseExecution(description: testCase.description)
+        let channelName = testCase.generateUniqueChannelName(for: testCaseExecution)
+        let options = testCase.options(for: testCaseExecution)
 
-        try await monitorConnectionThenCloseAndFinishAsync(client) {
-            let channel = client.channels.get(testCase.channelName, options: channelOptionsWithObjects())
-            let objects = channel.objects
+        try await testCaseExecution.execute {
+            let objectsHelper = try await ObjectsHelper()
+            let client = try await realtimeWithObjects(options: options)
 
-            try await channel.attachAsync()
-            let root = try await objects.getRoot()
+            try await monitorConnectionThenCloseAndFinishAsync(client) {
+                let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+                let objects = channel.objects
 
-            let sampleMapKey = "sampleMap"
-            let sampleCounterKey = "sampleCounter"
+                try await channel.attachAsync()
+                let root = try await objects.getRoot()
 
-            // Create promises for waiting for object updates
-            let objectsCreatedPromiseUpdates1 = try root.updates()
-            let objectsCreatedPromiseUpdates2 = try root.updates()
-            async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask {
-                    await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, sampleMapKey)
+                let sampleMapKey = "sampleMap"
+                let sampleCounterKey = "sampleCounter"
+
+                // Create promises for waiting for object updates
+                let objectsCreatedPromiseUpdates1 = try root.updates()
+                let objectsCreatedPromiseUpdates2 = try root.updates()
+                async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                    group.addTask {
+                        await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, sampleMapKey)
+                    }
+                    group.addTask {
+                        await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, sampleCounterKey)
+                    }
+                    while try await group.next() != nil {}
                 }
-                group.addTask {
-                    await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, sampleCounterKey)
-                }
-                while try await group.next() != nil {}
+
+                // Prepare map and counter objects for use by the scenario
+                let sampleMapResult = try await objectsHelper.createAndSetOnMap(
+                    channelName: channelName,
+                    mapObjectId: "root",
+                    key: sampleMapKey,
+                    createOp: objectsHelper.mapCreateRestOp(),
+                )
+                let sampleCounterResult = try await objectsHelper.createAndSetOnMap(
+                    channelName: channelName,
+                    mapObjectId: "root",
+                    key: sampleCounterKey,
+                    createOp: objectsHelper.counterCreateRestOp(),
+                )
+                _ = try await objectsCreatedPromise
+
+                try await testCase.scenario.action(
+                    .init(
+                        root: root,
+                        objectsHelper: objectsHelper,
+                        channelName: channelName,
+                        channel: channel,
+                        sampleMapKey: sampleMapKey,
+                        sampleMapObjectId: sampleMapResult.objectId,
+                        sampleCounterKey: sampleCounterKey,
+                        sampleCounterObjectId: sampleCounterResult.objectId,
+                    ),
+                )
             }
-
-            // Prepare map and counter objects for use by the scenario
-            let sampleMapResult = try await objectsHelper.createAndSetOnMap(
-                channelName: testCase.channelName,
-                mapObjectId: "root",
-                key: sampleMapKey,
-                createOp: objectsHelper.mapCreateRestOp(),
-            )
-            let sampleCounterResult = try await objectsHelper.createAndSetOnMap(
-                channelName: testCase.channelName,
-                mapObjectId: "root",
-                key: sampleCounterKey,
-                createOp: objectsHelper.counterCreateRestOp(),
-            )
-            _ = try await objectsCreatedPromise
-
-            try await testCase.scenario.action(
-                .init(
-                    root: root,
-                    objectsHelper: objectsHelper,
-                    channelName: testCase.channelName,
-                    channel: channel,
-                    sampleMapKey: sampleMapKey,
-                    sampleMapObjectId: sampleMapResult.objectId,
-                    sampleCounterKey: sampleCounterKey,
-                    sampleCounterObjectId: sampleCounterResult.objectId,
-                ),
-            )
         }
     }
 
@@ -3877,48 +3908,53 @@ private struct ObjectsIntegrationTests {
             return
         }
 
+        let testCaseExecution = TestCaseExecution(description: testCase.description)
+        let channelName = testCase.generateUniqueChannelName(for: testCaseExecution)
+
         // Configure GC options with shorter intervals for testing
-        var options = testCase.options
+        var options = testCase.options(for: testCaseExecution)
         options.garbageCollectionOptions = .init(
             interval: 2.0, // JS uses 0.5s but I've found that, at least testing locally, this was not enough to compensate for the clock skew between my local clock and whatever was used to generate the tombstonedAt timestamps server-side.
             gracePeriod: 0.25,
         )
 
-        let objectsHelper = try await ObjectsHelper()
-        let client = try await realtimeWithObjects(options: options)
+        try await testCaseExecution.execute {
+            let objectsHelper = try await ObjectsHelper()
+            let client = try await realtimeWithObjects(options: options)
 
-        try await monitorConnectionThenCloseAndFinishAsync(client) {
-            let channel = client.channels.get(testCase.channelName, options: channelOptionsWithObjects())
-            let objects = channel.objects
+            try await monitorConnectionThenCloseAndFinishAsync(client) {
+                let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+                let objects = channel.objects
 
-            try await channel.attachAsync()
-            let root = try await objects.getRoot()
+                try await channel.attachAsync()
+                let root = try await objects.getRoot()
 
-            // Helper function to wait for a specific number of GC cycles
-            let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-            let waitForGCCycles: @Sendable (Int) async -> Void = { cycles in
-                let gcEvents = internallyTypedObjects.testsOnly_proxied.testsOnly_completedGarbageCollectionEvents
+                // Helper function to wait for a specific number of GC cycles
+                let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
+                let waitForGCCycles: @Sendable (Int) async -> Void = { cycles in
+                    let gcEvents = internallyTypedObjects.testsOnly_proxied.testsOnly_completedGarbageCollectionEvents
 
-                var gcCalledTimes = 0
-                for await _ in gcEvents {
-                    gcCalledTimes += 1
-                    if gcCalledTimes >= cycles {
-                        break
+                    var gcCalledTimes = 0
+                    for await _ in gcEvents {
+                        gcCalledTimes += 1
+                        if gcCalledTimes >= cycles {
+                            break
+                        }
                     }
                 }
-            }
 
-            try await testCase.scenario.action(
-                .init(
-                    root: root,
-                    objectsHelper: objectsHelper,
-                    channelName: testCase.channelName,
-                    channel: channel,
-                    objects: objects,
-                    client: client,
-                    waitForGCCycles: waitForGCCycles,
-                ),
-            )
+                try await testCase.scenario.action(
+                    .init(
+                        root: root,
+                        objectsHelper: objectsHelper,
+                        channelName: channelName,
+                        channel: channel,
+                        objects: objects,
+                        client: client,
+                        waitForGCCycles: waitForGCCycles,
+                    ),
+                )
+            }
         }
     }
 }
