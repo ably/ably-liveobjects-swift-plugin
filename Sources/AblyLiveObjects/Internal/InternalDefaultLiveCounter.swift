@@ -80,13 +80,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
     // MARK: - Internal methods that back LiveCounter conformance
 
     internal func value(coreSDK: CoreSDK) throws(ARTErrorInfo) -> Double {
-        // RTLC5b: If the channel is in the DETACHED or FAILED state, the library should indicate an error with code 90001
-        try coreSDK.validateChannelState(notIn: [.detached, .failed], operationDescription: "LiveCounter.value")
-
-        return mutex.withLock {
-            // RTLC5c
-            mutableState.data
-        }
+        try mutableState.value(coreSDK: coreSDK)
     }
 
     internal func increment(amount: Double, coreSDK: CoreSDK) async throws(ARTErrorInfo) {
@@ -418,6 +412,14 @@ internal final class InternalDefaultLiveCounter: Sendable {
         mutating func resetDataToZeroValued() {
             // RTLC4
             data = 0
+        }
+
+        internal func value(coreSDK: CoreSDK) throws(ARTErrorInfo) -> Double {
+            // RTLC5b: If the channel is in the DETACHED or FAILED state, the library should indicate an error with code 90001
+            try coreSDK.validateChannelState(notIn: [.detached, .failed], operationDescription: "LiveCounter.value")
+
+            // RTLC5c
+            return data
         }
     }
 }
