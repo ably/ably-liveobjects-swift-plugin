@@ -1,0 +1,9 @@
+- [ ] it has missed out some of the primitiveKeyData (e.g. max integer)
+- [x] the primitiveKeyData need DRYing up — and I need to understand what types they should be
+- [ ] some of the code that checks unsubscribe might be a bit racy — e.g. it might just be that you didn't see an update yet because you dispatched its handling into a `Task`
+- [ ] there are a bunch of `if case` statements in the tests which make me worry that some tests might end up being no-ops
+- [x] processDeserializedProtocolMessage should really be using the internal queue
+- [ ] bring in line with latest tests
+- [ ] make it know that when injecting a sequence of object operation messages, it matters that it be done sequentially else some operations will be skipped due to serial being less than last applied
+- [ ] why are the integration tests either failing (fatalError due to an assertion without a test being in progress, or just hanging) when logging is enabled?
+- [ ] consistently use one tool for handling synchronous subscriptions in integration tests (`Subscriber`? because that supports unsubscribe too) and then use that everywhere, and document it
