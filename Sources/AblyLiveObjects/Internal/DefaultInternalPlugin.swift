@@ -1,4 +1,5 @@
 internal import AblyPlugin
+import Ably
 
 // We explicitly import the NSObject class, else it seems to get transitively imported from  `internal import AblyPlugin`, leading to the error "Class cannot be declared public because its superclass is internal".
 import ObjectiveC.NSObject
@@ -34,10 +35,11 @@ internal final class DefaultInternalPlugin: NSObject, AblyPlugin.LiveObjectsInte
 
     // Populates the channel's `objects` property.
     internal func prepare(_ channel: AblyPlugin.RealtimeChannel, client: AblyPlugin.RealtimeClient) {
-        let logger = pluginAPI.logger(for: channel)
+        let pluginLogger = pluginAPI.logger(for: channel)
         let callbackQueue = pluginAPI.callbackQueue(for: client)
-        let options = pluginAPI.options(for: client)
+        let options = pluginAPI.options(for: client) as! ARTClientOptions
 
+        let logger = DefaultLogger(pluginLogger: pluginLogger, pluginAPI: pluginAPI)
         logger.log("LiveObjects.DefaultInternalPlugin received prepare(_:)", level: .debug)
         let liveObjects = InternalDefaultRealtimeObjects(
             logger: logger,
@@ -68,8 +70,7 @@ internal final class DefaultInternalPlugin: NSObject, AblyPlugin.LiveObjectsInte
         _ serialized: [String: Any],
         context: DecodingContextProtocol,
         format: EncodingFormat,
-        error errorPtr: AutoreleasingUnsafeMutablePointer<ARTErrorInfo?>?,
-    ) -> (any ObjectMessageProtocol)? {
+    ) throws -> any ObjectMessageProtocol {
         let wireObject = WireValue.objectFromAblyPluginData(serialized)
 
         do {
@@ -83,8 +84,8 @@ internal final class DefaultInternalPlugin: NSObject, AblyPlugin.LiveObjectsInte
             )
             return ObjectMessageBox(objectMessage: objectMessage)
         } catch {
-            errorPtr?.pointee = error.toARTErrorInfo()
-            return nil
+            // Note that although not enforced by the type system, we must throw ARTErrorInfo
+            throw error.toARTErrorInfo()
         }
     }
 

@@ -1,11 +1,12 @@
 import Ably
+internal import AblyPlugin
 
 /**
  Describes the errors that can be thrown by the LiveObjects SDK. Use ``toARTErrorInfo()`` to convert to an `ARTErrorInfo` that you can throw.
  */
 internal enum LiveObjectsError {
     // operationDescription should be a description of a method like "LiveCounter.value"; it will be interpolated into an error message
-    case objectsOperationFailedInvalidChannelState(operationDescription: String, channelState: ARTRealtimeChannelState)
+    case objectsOperationFailedInvalidChannelState(operationDescription: String, channelState: AblyPlugin.RealtimeChannelState)
     case counterInitialValueInvalid(value: Double)
     case counterIncrementAmountInvalid(amount: Double)
 

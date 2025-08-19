@@ -14,7 +14,7 @@ internal protocol CoreSDK: AnyObject, Sendable {
     func testsOnly_overridePublish(with newImplementation: @escaping ([OutboundObjectMessage]) async throws(InternalError) -> Void)
 
     /// Returns the current state of the Realtime channel that this wraps.
-    var channelState: ARTRealtimeChannelState { get }
+    var channelState: AblyPlugin.RealtimeChannelState { get }
 }
 
 internal final class DefaultCoreSDK: CoreSDK {
@@ -24,7 +24,7 @@ internal final class DefaultCoreSDK: CoreSDK {
     private let channel: AblyPlugin.RealtimeChannel
     private let client: AblyPlugin.RealtimeClient
     private let pluginAPI: PluginAPIProtocol
-    private let logger: AblyPlugin.Logger
+    private let logger: Logger
 
     /// If set to true, ``publish(objectMessages:)`` will behave like a no-op.
     ///
@@ -37,7 +37,7 @@ internal final class DefaultCoreSDK: CoreSDK {
         channel: AblyPlugin.RealtimeChannel,
         client: AblyPlugin.RealtimeClient,
         pluginAPI: PluginAPIProtocol,
-        logger: AblyPlugin.Logger
+        logger: Logger
     ) {
         self.channel = channel
         self.client = client
@@ -81,8 +81,8 @@ internal final class DefaultCoreSDK: CoreSDK {
         }
     }
 
-    internal var channelState: ARTRealtimeChannelState {
-        channel.state
+    internal var channelState: AblyPlugin.RealtimeChannelState {
+        pluginAPI.state(for: channel)
     }
 }
 
@@ -97,7 +97,7 @@ internal extension CoreSDK {
     ///   - operationDescription: A description of the operation being performed, used in error messages
     /// - Throws: `ARTErrorInfo` with code 90001 and statusCode 400 if the channel is in any of the invalid states
     func validateChannelState(
-        notIn invalidStates: [ARTRealtimeChannelState],
+        notIn invalidStates: [AblyPlugin.RealtimeChannelState],
         operationDescription: String,
     ) throws(ARTErrorInfo) {
         let currentChannelState = channelState

@@ -12,7 +12,8 @@ public extension ARTRealtimeChannel {
         let underlyingObjects = pluginAPI.underlyingObjects(forPublicRealtimeChannel: self)
         let internalObjects = DefaultInternalPlugin.realtimeObjects(for: underlyingObjects.channel, pluginAPI: pluginAPI)
 
-        let logger = pluginAPI.logger(for: underlyingObjects.channel)
+        let pluginLogger = pluginAPI.logger(for: underlyingObjects.channel)
+        let logger = DefaultLogger(pluginLogger: pluginLogger, pluginAPI: pluginAPI)
 
         let coreSDK = DefaultCoreSDK(
             channel: underlyingObjects.channel,

@@ -1,14 +1,15 @@
 import Ably
+import AblyPlugin
 @testable import AblyLiveObjects
 
 final class MockCoreSDK: CoreSDK {
     /// Synchronizes access to all of this instance's mutable state.
     private let mutex = NSLock()
 
-    private nonisolated(unsafe) var _channelState: ARTRealtimeChannelState
+    private nonisolated(unsafe) var _channelState: AblyPlugin.RealtimeChannelState
     private nonisolated(unsafe) var _publishHandler: (([OutboundObjectMessage]) async throws(InternalError) -> Void)?
 
-    init(channelState: ARTRealtimeChannelState) {
+    init(channelState: AblyPlugin.RealtimeChannelState) {
         _channelState = channelState
     }
 
@@ -24,7 +25,7 @@ final class MockCoreSDK: CoreSDK {
         protocolRequirementNotImplemented()
     }
 
-    var channelState: ARTRealtimeChannelState {
+    var channelState: AblyPlugin.RealtimeChannelState {
         get {
             mutex.withLock {
                 _channelState

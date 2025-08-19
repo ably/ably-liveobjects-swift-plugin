@@ -1,4 +1,5 @@
 internal import AblyPlugin
+import Ably
 
 internal extension ARTClientOptions {
     private class Box<T> {
