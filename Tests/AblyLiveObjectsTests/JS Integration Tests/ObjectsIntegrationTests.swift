@@ -39,9 +39,24 @@ private func lexicoTimeserial(seriesId: String, timestamp: Int64, counter: Int, 
     return result
 }
 
-func monitorConnectionThenCloseAndFinishAsync(_ realtime: ARTRealtime, action: @escaping @Sendable () async throws -> Void) async throws {
-    defer { realtime.connection.close() }
+nonisolated(unsafe) var realtimeInstanceCount = 0
+let mutex = NSLock()
 
+func monitorConnectionThenCloseAndFinishAsync(_ realtime: ARTRealtime, action: @escaping @Sendable () async throws -> Void) async throws {
+    defer {
+        let localRealtimeInstanceCount = mutex.withLock {
+            realtimeInstanceCount -= 1
+            return realtimeInstanceCount
+        }
+        print("realtimeInstanceCount decreased to \(localRealtimeInstanceCount)")
+        realtime.connection.close()
+    }
+
+    let localRealtimeInstanceCount = mutex.withLock {
+        realtimeInstanceCount += 1
+        return realtimeInstanceCount
+    }
+    print("realtimeInstanceCount increased to \(localRealtimeInstanceCount)")
     try await withThrowingTaskGroup { group in
         // Monitor connection state
         for state in [ARTRealtimeConnectionEvent.failed, .suspended] {
@@ -49,6 +64,7 @@ func monitorConnectionThenCloseAndFinishAsync(_ realtime: ARTRealtime, action: @
                 let (stream, continuation) = AsyncThrowingStream<Void, Error>.makeStream()
 
                 let subscription = realtime.connection.on(state) { _ in
+                    print("monitorConnectionThenCloseAndFinishAsync got error state \(state)")
                     realtime.close()
 
                     let error = NSError(
@@ -213,25 +229,44 @@ private let countersFixtures: [(name: String, count: Double?)] = [
 
 /// The output of `forScenarios`. One element of the one-dimensional arguments array that is passed to a Swift Testing test.
 private struct TestCase<Context>: Identifiable, CustomStringConvertible {
+    init(disabled: Bool, scenario: TestScenario<Context>, baseOptions: ClientHelper.PartialClientOptions, baseChannelName: String) {
+        self.disabled = disabled
+        self.scenario = scenario
+        self.baseOptions = baseOptions
+        self.baseChannelName = baseChannelName
+    }
+
     var disabled: Bool
     var scenario: TestScenario<Context>
-    var options: ClientHelper.PartialClientOptions
-    var channelName: String
+    private var baseOptions: ClientHelper.PartialClientOptions
+    private var baseChannelName: String
 
     /// This `Identifiable` conformance allows us to re-run individual test cases from the Xcode UI (https://developer.apple.com/documentation/testing/parameterizedtesting#Run-selected-test-cases)
     var id: TestCaseID {
-        .init(description: scenario.description, options: options)
+        .init(description: scenario.description, options: baseOptions)
     }
 
     /// This seems to determine the nice name that you see for this when it's used as a test case parameter. (I can't see anywhere that this is documented; found it by experimentation).
     var description: String {
         var result = scenario.description
 
-        if let useBinaryProtocol = options.useBinaryProtocol {
+        if let useBinaryProtocol = baseOptions.useBinaryProtocol {
             result += " (\(useBinaryProtocol ? "binary" : "text"))"
         }
 
         return result
+    }
+
+    /// Generates a unique channel name based on ``baseChannelName``.
+    func generateUniqueChannelName(for execution: borrowing TestCaseExecution) -> String {
+        "\(execution.id) \(baseChannelName)"
+    }
+
+    /// Generates client options based on ``baseOptions``, so that the log messages emitted by a client identify the test execution in which the client created.
+    func options(for execution: borrowing TestCaseExecution) -> ClientHelper.PartialClientOptions {
+        var options = baseOptions
+        options.logIdentifier = execution.id.uuidString
+        return options
     }
 }
 
@@ -260,12 +295,12 @@ private func forScenarios<Context>(_ scenarios: [TestScenario<Context>]) -> [Tes
                 return .init(
                     disabled: scenario.disabled,
                     scenario: scenario,
-                    options: clientOptions,
-                    channelName: "\(scenario.description) \(useBinaryProtocol ? "binary" : "text")",
+                    baseOptions: clientOptions,
+                    baseChannelName: "\(scenario.description) \(useBinaryProtocol ? "binary" : "text")",
                 )
             }
         } else {
-            return [.init(disabled: scenario.disabled, scenario: scenario, options: clientOptions, channelName: scenario.description)]
+            return [.init(disabled: scenario.disabled, scenario: scenario, baseOptions: clientOptions, baseChannelName: scenario.description)]
         }
     }
     .flatMap(\.self)
@@ -316,6 +351,77 @@ private actor ObjectsFixturesTrait: SuiteTrait, TestScoping {
 
 extension Trait where Self == ObjectsFixturesTrait {
     static var objectsFixtures: Self { Self() }
+}
+
+/// Limits the number of concurrently-executing tests to a given number.
+///
+/// This trait uses an actor-based counter to ensure that only a limited number of tests can run simultaneously,
+/// which can be useful for preventing resource exhaustion or rate limiting issues.
+private actor ConcurrencyLimitingTrait: TestTrait, TestScoping {
+    private let maxConcurrentTests: Int
+    private var currentRunningTests: Int = 0
+    private var waitingTests: [CheckedContinuation<Void, Never>] = []
+
+    init(maxConcurrentTests: Int) {
+        self.maxConcurrentTests = maxConcurrentTests
+        print("ConcurrencyLimitingTrait initialized with limit: \(maxConcurrentTests)")
+    }
+
+//    nonisolated var isRecursive: Bool {
+//        // if we make this true the tests crash with EXC_BREAKPOINT
+//        false
+//    }
+
+    func provideScope(for _: Test, testCase _: Test.Case?, performing function: () async throws -> Void) async throws {
+        // Wait for a slot to become available
+        await waitForSlot()
+
+        // Increment the counter
+        currentRunningTests += 1
+        print("currentRunningTests increased to \(currentRunningTests)")
+
+        defer {
+            // Decrement the counter and signal waiting tests
+            currentRunningTests -= 1
+            print("currentRunningTests decreased to \(currentRunningTests)")
+            signalWaitingTests()
+        }
+
+        try await function()
+    }
+
+    private func waitForSlot() async {
+        if currentRunningTests < maxConcurrentTests {
+            print("waitForSlot: slot available, currentRunningTests=\(currentRunningTests)")
+            return
+        }
+
+        print("waitForSlot: waiting, currentRunningTests=\(currentRunningTests), waitingTests.count=\(waitingTests.count)")
+        return await withCheckedContinuation { continuation in
+            waitingTests.append(continuation)
+            print("waitForSlot: added to waiting queue, waitingTests.count=\(waitingTests.count)")
+        }
+    }
+
+    private func signalWaitingTests() {
+        // Only signal one test at a time to prevent race conditions
+        // and ensure we don't exceed the limit
+        print("signalWaitingTests: currentRunningTests=\(currentRunningTests), waitingTests.count=\(waitingTests.count)")
+        if !waitingTests.isEmpty, currentRunningTests < maxConcurrentTests {
+            let nextTest = waitingTests.removeFirst()
+            print("signalWaitingTests: resuming next test, waitingTests.count=\(waitingTests.count)")
+            // Resume the next test, which will then call waitForSlot() and increment the counter
+            nextTest.resume()
+        }
+    }
+}
+
+extension Trait where Self == ConcurrencyLimitingTrait {
+    // Use a singleton instance to ensure all tests share the same trait
+    static var concurrencyLimit5: Self {
+        // This will create a single instance that's shared across all tests
+        Self(maxConcurrentTests: 5)
+    }
 }
 
 // MARK: - Utility types
@@ -2916,22 +3022,23 @@ private struct ObjectsIntegrationTests {
                     action: { ctx in
                         let objects = ctx.objects
 
-                        let maps = try await withThrowingTaskGroup(of: (any LiveMap).self, returning: [any LiveMap].self) { group in
-                            for mapFixture in primitiveMapsFixtures {
+                        let maps = try await withThrowingTaskGroup(of: (index: Int, map: any LiveMap).self, returning: [any LiveMap].self) { group in
+                            for (index, mapFixture) in primitiveMapsFixtures.enumerated() {
                                 group.addTask {
-                                    if let entries = mapFixture.liveMapEntries {
+                                    let map = if let entries = mapFixture.liveMapEntries {
                                         try await objects.createMap(entries: entries)
                                     } else {
                                         try await objects.createMap()
                                     }
+                                    return (index: index, map: map)
                                 }
                             }
 
-                            var results: [any LiveMap] = []
-                            while let map = try await group.next() {
-                                results.append(map)
+                            var results: [(index: Int, map: any LiveMap)] = []
+                            while let result = try await group.next() {
+                                results.append(result)
                             }
-                            return results
+                            return results.sorted { $0.index < $1.index }.map(\.map)
                         }
 
                         for (i, map) in maps.enumerated() {
@@ -3196,7 +3303,7 @@ private struct ObjectsIntegrationTests {
         }()
     }
 
-    @Test(arguments: FirstSetOfScenarios.testCases)
+    @Test(.concurrencyLimit5, arguments: FirstSetOfScenarios.testCases)
     func firstSetOfScenarios(testCase: TestCase<FirstSetOfScenarios.Context>) async throws {
         guard !testCase.disabled else {
             withKnownIssue {
@@ -3205,27 +3312,33 @@ private struct ObjectsIntegrationTests {
             return
         }
 
-        let objectsHelper = try await ObjectsHelper()
-        let client = try await realtimeWithObjects(options: testCase.options)
+        let testCaseExecution = TestCaseExecution(description: testCase.description)
+        let options = testCase.options(for: testCaseExecution)
+        let channelName = testCase.generateUniqueChannelName(for: testCaseExecution)
 
-        try await monitorConnectionThenCloseAndFinishAsync(client) {
-            let channel = client.channels.get(testCase.channelName, options: channelOptionsWithObjects())
-            let objects = channel.objects
+        try await testCaseExecution.execute {
+            let objectsHelper = try await ObjectsHelper()
+            let client = try await realtimeWithObjects(options: options)
 
-            try await channel.attachAsync()
-            let root = try await objects.getRoot()
+            try await monitorConnectionThenCloseAndFinishAsync(client) {
+                let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+                let objects = channel.objects
 
-            try await testCase.scenario.action(
-                .init(
-                    objects: objects,
-                    root: root,
-                    objectsHelper: objectsHelper,
-                    channelName: testCase.channelName,
-                    channel: channel,
-                    client: client,
-                    clientOptions: testCase.options,
-                ),
-            )
+                try await channel.attachAsync()
+                let root = try await objects.getRoot()
+
+                try await testCase.scenario.action(
+                    .init(
+                        objects: objects,
+                        root: root,
+                        objectsHelper: objectsHelper,
+                        channelName: channelName,
+                        channel: channel,
+                        client: client,
+                        clientOptions: options,
+                    ),
+                )
+            }
         }
     }
 
@@ -3651,7 +3764,7 @@ private struct ObjectsIntegrationTests {
     }
 
     @available(iOS 17.0.0, tvOS 17.0.0, *)
-    @Test(arguments: SubscriptionCallbacksScenarios.testCases)
+    @Test(.concurrencyLimit5, arguments: SubscriptionCallbacksScenarios.testCases)
     func subscriptionCallbacksScenarios(testCase: TestCase<SubscriptionCallbacksScenarios.Context>) async throws {
         guard !testCase.disabled else {
             withKnownIssue {
@@ -3660,59 +3773,65 @@ private struct ObjectsIntegrationTests {
             return
         }
 
-        let objectsHelper = try await ObjectsHelper()
-        let client = try await realtimeWithObjects(options: testCase.options)
+        let testCaseExecution = TestCaseExecution(description: testCase.description)
+        let channelName = testCase.generateUniqueChannelName(for: testCaseExecution)
+        let options = testCase.options(for: testCaseExecution)
 
-        try await monitorConnectionThenCloseAndFinishAsync(client) {
-            let channel = client.channels.get(testCase.channelName, options: channelOptionsWithObjects())
-            let objects = channel.objects
+        try await testCaseExecution.execute {
+            let objectsHelper = try await ObjectsHelper()
+            let client = try await realtimeWithObjects(options: options)
 
-            try await channel.attachAsync()
-            let root = try await objects.getRoot()
+            try await monitorConnectionThenCloseAndFinishAsync(client) {
+                let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+                let objects = channel.objects
 
-            let sampleMapKey = "sampleMap"
-            let sampleCounterKey = "sampleCounter"
+                try await channel.attachAsync()
+                let root = try await objects.getRoot()
 
-            // Create promises for waiting for object updates
-            let objectsCreatedPromiseUpdates1 = try root.updates()
-            let objectsCreatedPromiseUpdates2 = try root.updates()
-            async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask {
-                    await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, sampleMapKey)
+                let sampleMapKey = "sampleMap"
+                let sampleCounterKey = "sampleCounter"
+
+                // Create promises for waiting for object updates
+                let objectsCreatedPromiseUpdates1 = try root.updates()
+                let objectsCreatedPromiseUpdates2 = try root.updates()
+                async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                    group.addTask {
+                        await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, sampleMapKey)
+                    }
+                    group.addTask {
+                        await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, sampleCounterKey)
+                    }
+                    while try await group.next() != nil {}
                 }
-                group.addTask {
-                    await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, sampleCounterKey)
-                }
-                while try await group.next() != nil {}
+
+                // Prepare map and counter objects for use by the scenario
+                let sampleMapResult = try await objectsHelper.createAndSetOnMap(
+                    channelName: channelName,
+                    mapObjectId: "root",
+                    key: sampleMapKey,
+                    createOp: objectsHelper.mapCreateRestOp(),
+                )
+                let sampleCounterResult = try await objectsHelper.createAndSetOnMap(
+                    channelName: channelName,
+                    mapObjectId: "root",
+                    key: sampleCounterKey,
+                    createOp: objectsHelper.counterCreateRestOp(),
+                )
+                _ = try await objectsCreatedPromise
+
+                try await testCase.scenario.action(
+                    .init(
+                        root: root,
+                        objectsHelper: objectsHelper,
+                        channelName: channelName,
+                        channel: channel,
+                        sampleMapKey: sampleMapKey,
+                        sampleMapObjectId: sampleMapResult.objectId,
+                        sampleCounterKey: sampleCounterKey,
+                        sampleCounterObjectId: sampleCounterResult.objectId,
+                    ),
+                )
             }
-
-            // Prepare map and counter objects for use by the scenario
-            let sampleMapResult = try await objectsHelper.createAndSetOnMap(
-                channelName: testCase.channelName,
-                mapObjectId: "root",
-                key: sampleMapKey,
-                createOp: objectsHelper.mapCreateRestOp(),
-            )
-            let sampleCounterResult = try await objectsHelper.createAndSetOnMap(
-                channelName: testCase.channelName,
-                mapObjectId: "root",
-                key: sampleCounterKey,
-                createOp: objectsHelper.counterCreateRestOp(),
-            )
-            _ = try await objectsCreatedPromise
-
-            try await testCase.scenario.action(
-                .init(
-                    root: root,
-                    objectsHelper: objectsHelper,
-                    channelName: testCase.channelName,
-                    channel: channel,
-                    sampleMapKey: sampleMapKey,
-                    sampleMapObjectId: sampleMapResult.objectId,
-                    sampleCounterKey: sampleCounterKey,
-                    sampleCounterObjectId: sampleCounterResult.objectId,
-                ),
-            )
         }
     }
 
@@ -3728,7 +3847,7 @@ private struct ObjectsIntegrationTests {
             var channel: ARTRealtimeChannel
             var objects: any RealtimeObjects
             var client: ARTRealtime
-            var waitForGCCycles: @Sendable (Int) async -> Void
+            var waitForTombstonedObjectsToBeCollected: @Sendable (Date) async throws -> Void
         }
 
         static let scenarios: [TestScenario<Context>] = [
@@ -3741,7 +3860,7 @@ private struct ObjectsIntegrationTests {
                     let channelName = ctx.channelName
                     let channel = ctx.channel
                     let objects = ctx.objects
-                    let waitForGCCycles = ctx.waitForGCCycles
+                    let waitForTombstonedObjectsToBeCollected = ctx.waitForTombstonedObjectsToBeCollected
 
                     // Wait for counter creation
                     async let counterCreatedPromise: Void = waitForObjectOperation(ctx.objects, .counterCreate)
@@ -3779,9 +3898,10 @@ private struct ObjectsIntegrationTests {
                         "Check object's \"tombstone\" flag is set to \"true\" after OBJECT_DELETE",
                     )
 
-                    // We expect 2 cycles to guarantee that grace period has expired, which will always be
-                    // true based on the test config used
-                    await waitForGCCycles(2)
+                    let tombstonedAt = try #require(poolEntry.tombstonedAt)
+
+                    // Wait for objects tombstoned at this time to be garbage collected
+                    try await waitForTombstonedObjectsToBeCollected(tombstonedAt)
 
                     // Object should be removed from the local pool entirely now, as the GC grace period has passed
                     #expect(
@@ -3798,7 +3918,7 @@ private struct ObjectsIntegrationTests {
                     let root = ctx.root
                     let objectsHelper = ctx.objectsHelper
                     let channelName = ctx.channelName
-                    let waitForGCCycles = ctx.waitForGCCycles
+                    let waitForTombstonedObjectsToBeCollected = ctx.waitForTombstonedObjectsToBeCollected
 
                     let keyUpdatedPromise = try root.updates()
                     async let keyUpdatedWait: Void = {
@@ -3853,9 +3973,10 @@ private struct ObjectsIntegrationTests {
                         "Check map entry for \"foo\" on root has \"tombstone\" flag set to \"true\" after MAP_REMOVE",
                     )
 
-                    // We expect 2 cycles to guarantee that grace period has expired, which will always be
-                    // true based on the test config used
-                    await waitForGCCycles(2)
+                    let tombstonedAt = try #require(underlyingData["foo"]?.tombstonedAt)
+
+                    // Wait for objects tombstoned at this time to be garbage collected
+                    try await waitForTombstonedObjectsToBeCollected(tombstonedAt)
 
                     // The entry should be removed from the underlying map now
                     let underlyingDataAfterGC = internalRoot.testsOnly_data
@@ -3868,7 +3989,7 @@ private struct ObjectsIntegrationTests {
         ]
     }
 
-    @Test(arguments: TombstonesGCScenarios.testCases)
+    @Test(.concurrencyLimit5, arguments: TombstonesGCScenarios.testCases)
     func tombstonesGCScenarios(testCase: TestCase<TombstonesGCScenarios.Context>) async throws {
         guard !testCase.disabled else {
             withKnownIssue {
@@ -3877,48 +3998,53 @@ private struct ObjectsIntegrationTests {
             return
         }
 
+        let testCaseExecution = TestCaseExecution(description: testCase.description)
+        let channelName = testCase.generateUniqueChannelName(for: testCaseExecution)
+
         // Configure GC options with shorter intervals for testing
-        var options = testCase.options
-        options.garbageCollectionOptions = .init(
-            interval: 2.0, // JS uses 0.5s but I've found that, at least testing locally, this was not enough to compensate for the clock skew between my local clock and whatever was used to generate the tombstonedAt timestamps server-side.
+        var options = testCase.options(for: testCaseExecution)
+        let garbageCollectionOptions = InternalDefaultRealtimeObjects.GarbageCollectionOptions(
+            interval: 0.5,
             gracePeriod: 0.25,
         )
+        options.garbageCollectionOptions = garbageCollectionOptions
 
-        let objectsHelper = try await ObjectsHelper()
-        let client = try await realtimeWithObjects(options: options)
+        try await testCaseExecution.execute {
+            let objectsHelper = try await ObjectsHelper()
+            let client = try await realtimeWithObjects(options: options)
 
-        try await monitorConnectionThenCloseAndFinishAsync(client) {
-            let channel = client.channels.get(testCase.channelName, options: channelOptionsWithObjects())
-            let objects = channel.objects
+            try await monitorConnectionThenCloseAndFinishAsync(client) {
+                let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+                let objects = channel.objects
 
-            try await channel.attachAsync()
-            let root = try await objects.getRoot()
+                try await channel.attachAsync()
+                let root = try await objects.getRoot()
 
-            // Helper function to wait for a specific number of GC cycles
-            let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-            let waitForGCCycles: @Sendable (Int) async -> Void = { cycles in
-                let gcEvents = internallyTypedObjects.testsOnly_proxied.testsOnly_completedGarbageCollectionEvents
-
-                var gcCalledTimes = 0
-                for await _ in gcEvents {
-                    gcCalledTimes += 1
-                    if gcCalledTimes >= cycles {
-                        break
+                // Helper function to wait for enough GC cycles to occur such that objects tombstoned at a specific time should have been garbage collected. This is a slightly different approach to the JS tests, which wait for a certain number of GC cycles to occur, but I think that this is a bit more robust in the face of clock skew between the local clock and whatever was used to generate the tombstonedAt timestamps server-side.
+                let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
+                let waitForTombstonedObjectsToBeCollected: @Sendable (Date) async throws -> Void = { (tombstonedAt: Date) in
+                    // Sleep until we're sure we're past tombstonedAt + gracePeriod
+                    let timeUntilGracePeriodExpires = (tombstonedAt + garbageCollectionOptions.gracePeriod).timeIntervalSince(.init())
+                    if timeUntilGracePeriodExpires > 0 {
+                        try await Task.sleep(nanoseconds: UInt64(timeUntilGracePeriodExpires * Double(NSEC_PER_SEC)))
                     }
-                }
-            }
 
-            try await testCase.scenario.action(
-                .init(
-                    root: root,
-                    objectsHelper: objectsHelper,
-                    channelName: testCase.channelName,
-                    channel: channel,
-                    objects: objects,
-                    client: client,
-                    waitForGCCycles: waitForGCCycles,
-                ),
-            )
+                    // Wait for the next GC event
+                    await internallyTypedObjects.testsOnly_proxied.testsOnly_completedGarbageCollectionEventsWithoutBuffering.first { _ in true }
+                }
+
+                try await testCase.scenario.action(
+                    .init(
+                        root: root,
+                        objectsHelper: objectsHelper,
+                        channelName: channelName,
+                        channel: channel,
+                        objects: objects,
+                        client: client,
+                        waitForTombstonedObjectsToBeCollected: waitForTombstonedObjectsToBeCollected,
+                    ),
+                )
+            }
         }
     }
 }

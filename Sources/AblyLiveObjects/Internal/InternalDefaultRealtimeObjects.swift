@@ -1,14 +1,14 @@
+internal import _AblyPluginSupportPrivate
 import Ably
-internal import AblyPlugin
 
 /// This provides the implementation behind ``PublicDefaultRealtimeObjects``, via internal versions of the ``RealtimeObjects`` API.
 internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectPoolDelegate {
-    // Used for synchronizing access to all of this instance's mutable state. This is a temporary solution just to allow us to implement `Sendable`, and we'll revisit it in https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/3.
+    // Used for synchronizing access to all of this instance's mutable state. This is a temporary solution just to allow us to implement `Sendable`, and we'll revisit it in https://github.com/ably/ably-liveobjects-swift-plugin/issues/3.
     private let mutex = NSLock()
 
     private nonisolated(unsafe) var mutableState: MutableState!
 
-    private let logger: AblyPlugin.Logger
+    private let logger: Logger
     private let userCallbackQueue: DispatchQueue
     private let clock: SimpleClock
 
@@ -91,14 +91,14 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectPool
         }
     }
 
-    internal init(logger: AblyPlugin.Logger, userCallbackQueue: DispatchQueue, clock: SimpleClock, garbageCollectionOptions: GarbageCollectionOptions = .init()) {
+    internal init(logger: Logger, userCallbackQueue: DispatchQueue, clock: SimpleClock, garbageCollectionOptions: GarbageCollectionOptions = .init()) {
         self.logger = logger
         self.userCallbackQueue = userCallbackQueue
         self.clock = clock
         (receivedObjectProtocolMessages, receivedObjectProtocolMessagesContinuation) = AsyncStream.makeStream()
         (receivedObjectSyncProtocolMessages, receivedObjectSyncProtocolMessagesContinuation) = AsyncStream.makeStream()
         (waitingForSyncEvents, waitingForSyncEventsContinuation) = AsyncStream.makeStream()
-        (completedGarbageCollectionEvents, completedGarbageCollectionsEventsContinuation) = AsyncStream.makeStream()
+        (completedGarbageCollectionEventsWithoutBuffering, completedGarbageCollectionEventsWithoutBufferingContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(0))
         mutableState = .init(objectsPool: .init(logger: logger, userCallbackQueue: userCallbackQueue, clock: clock))
         garbageCollectionInterval = garbageCollectionOptions.interval
         garbageCollectionGracePeriod = garbageCollectionOptions.gracePeriod
@@ -168,7 +168,7 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectPool
             }
 
             // RTO11f
-            // TODO: This is a stopgap; change to use server time per RTO11f5 (https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/50)
+            // TODO: This is a stopgap; change to use server time per RTO11f5 (https://github.com/ably/ably-liveobjects-swift-plugin/issues/50)
             let timestamp = clock.now
             let creationOperation = ObjectCreationHelpers.creationOperationForLiveMap(
                 entries: entries,
@@ -213,7 +213,7 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectPool
 
             // RTO12f
 
-            // TODO: This is a stopgap; change to use server time per RTO12f5 (https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/50)
+            // TODO: This is a stopgap; change to use server time per RTO12f5 (https://github.com/ably/ably-liveobjects-swift-plugin/issues/50)
             let timestamp = clock.now
             let creationOperation = ObjectCreationHelpers.creationOperationForLiveCounter(
                 count: count,
@@ -240,10 +240,6 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectPool
     internal func createCounter(coreSDK: CoreSDK) async throws(ARTErrorInfo) -> InternalDefaultLiveCounter {
         // RTO12f2a
         try await createCounter(count: 0, coreSDK: coreSDK)
-    }
-
-    internal func batch(callback _: sending BatchCallback) async throws {
-        notYetImplemented()
     }
 
     @discardableResult
@@ -332,17 +328,17 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectPool
                 gracePeriod: garbageCollectionGracePeriod,
                 clock: clock,
                 logger: logger,
-                eventsContinuation: completedGarbageCollectionsEventsContinuation,
+                eventsContinuation: completedGarbageCollectionEventsWithoutBufferingContinuation,
             )
         }
     }
 
-    // These drive the testsOnly_completedGarbageCollectionEvents property that informs the test suite when a garbage collection cycle has completed.
-    private let completedGarbageCollectionEvents: AsyncStream<Void>
-    private let completedGarbageCollectionsEventsContinuation: AsyncStream<Void>.Continuation
+    // These drive the testsOnly_completedGarbageCollectionEventsWithoutBuffering property that informs the test suite when a garbage collection cycle has completed.
+    private let completedGarbageCollectionEventsWithoutBuffering: AsyncStream<Void>
+    private let completedGarbageCollectionEventsWithoutBufferingContinuation: AsyncStream<Void>.Continuation
     /// Emits an element whenever a garbage collection cycle has completed.
-    internal var testsOnly_completedGarbageCollectionEvents: AsyncStream<Void> {
-        completedGarbageCollectionEvents
+    internal var testsOnly_completedGarbageCollectionEventsWithoutBuffering: AsyncStream<Void> {
+        completedGarbageCollectionEventsWithoutBuffering
     }
 
     // MARK: - Testing
@@ -352,12 +348,12 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectPool
     /// - testsOnly_receivedObjectProtocolMessages
     /// - testsOnly_receivedObjectStateProtocolMessages
     /// - testsOnly_waitingForSyncEvents
-    /// - testsOnly_completedGarbageCollectionEvents
+    /// - testsOnly_completedGarbageCollectionEventsWithoutBuffering
     internal func testsOnly_finishAllTestHelperStreams() {
         receivedObjectProtocolMessagesContinuation.finish()
         receivedObjectSyncProtocolMessagesContinuation.finish()
         waitingForSyncEventsContinuation.finish()
-        completedGarbageCollectionsEventsContinuation.finish()
+        completedGarbageCollectionEventsWithoutBufferingContinuation.finish()
     }
 
     // MARK: - Mutable state and the operations that affect it

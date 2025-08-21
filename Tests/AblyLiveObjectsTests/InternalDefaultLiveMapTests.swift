@@ -1,5 +1,6 @@
+import _AblyPluginSupportPrivate
+import Ably
 @testable import AblyLiveObjects
-import AblyPlugin
 import Foundation
 import Testing
 
@@ -7,8 +8,8 @@ struct InternalDefaultLiveMapTests {
     /// Tests for the `get` method, covering RTLM5 specification points
     struct GetTests {
         // @spec RTLM5c
-        @Test(arguments: [.detached, .failed] as [ARTRealtimeChannelState])
-        func getThrowsIfChannelIsDetachedOrFailed(channelState: ARTRealtimeChannelState) async throws {
+        @Test(arguments: [.detached, .failed] as [_AblyPluginSupportPrivate.RealtimeChannelState])
+        func getThrowsIfChannelIsDetachedOrFailed(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             let logger = TestLogger()
             let map = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, userCallbackQueue: .main, clock: MockSimpleClock())
 
@@ -92,7 +93,7 @@ struct InternalDefaultLiveMapTests {
             #expect(result?.stringValue == "test")
         }
 
-        // TODO: Needs specification (see https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/46)
+        // TODO: Needs specification (see https://github.com/ably/ably-liveobjects-swift-plugin/issues/46)
         // Tests when `json` is a JSON array
         @Test
         func returnsJSONArrayValue() throws {
@@ -104,7 +105,7 @@ struct InternalDefaultLiveMapTests {
             #expect(result?.jsonArrayValue == ["foo"])
         }
 
-        // TODO: Needs specification (see https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/46)
+        // TODO: Needs specification (see https://github.com/ably/ably-liveobjects-swift-plugin/issues/46)
         // Tests when `json` is a JSON object
         @Test
         func returnsJSONObjectValue() throws {
@@ -275,8 +276,8 @@ struct InternalDefaultLiveMapTests {
         // @spec RTLM11c
         // @spec RTLM12b
         // @spec RTLM13b
-        @Test(arguments: [.detached, .failed] as [ARTRealtimeChannelState])
-        func allPropertiesThrowIfChannelIsDetachedOrFailed(channelState: ARTRealtimeChannelState) async throws {
+        @Test(arguments: [.detached, .failed] as [_AblyPluginSupportPrivate.RealtimeChannelState])
+        func allPropertiesThrowIfChannelIsDetachedOrFailed(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             let logger = TestLogger()
             let map = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: channelState)
@@ -411,8 +412,8 @@ struct InternalDefaultLiveMapTests {
                     "bytes": TestFactories.internalMapEntry(data: ObjectData(bytes: Data([0x01, 0x02, 0x03]))), // RTLM5d2c
                     "number": TestFactories.internalMapEntry(data: ObjectData(number: NSNumber(value: 42))), // RTLM5d2d
                     "string": TestFactories.internalMapEntry(data: ObjectData(string: "hello")), // RTLM5d2e
-                    "jsonArray": TestFactories.internalMapEntry(data: ObjectData(json: .array(["foo"]))), // TODO: Needs specification (see https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/46)
-                    "jsonObject": TestFactories.internalMapEntry(data: ObjectData(json: .object(["foo": "bar"]))), // TODO: Needs specification (see https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/46)
+                    "jsonArray": TestFactories.internalMapEntry(data: ObjectData(json: .array(["foo"]))), // TODO: Needs specification (see https://github.com/ably/ably-liveobjects-swift-plugin/issues/46)
+                    "jsonObject": TestFactories.internalMapEntry(data: ObjectData(json: .object(["foo": "bar"]))), // TODO: Needs specification (see https://github.com/ably/ably-liveobjects-swift-plugin/issues/46)
                     "mapRef": TestFactories.internalMapEntry(data: ObjectData(objectId: "map:ref@123")), // RTLM5d2f2
                     "counterRef": TestFactories.internalMapEntry(data: ObjectData(objectId: "counter:ref@456")), // RTLM5d2f2
                 ],
@@ -1230,8 +1231,8 @@ struct InternalDefaultLiveMapTests {
     /// Tests for the `set` method, covering RTLM20 specification points
     struct SetTests {
         // @spec RTLM20c
-        @Test(arguments: [.detached, .failed, .suspended] as [ARTRealtimeChannelState])
-        func throwsErrorForInvalidChannelState(channelState: ARTRealtimeChannelState) async throws {
+        @Test(arguments: [.detached, .failed, .suspended] as [_AblyPluginSupportPrivate.RealtimeChannelState])
+        func throwsErrorForInvalidChannelState(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             let logger = TestLogger()
             let map = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: channelState)
@@ -1330,8 +1331,8 @@ struct InternalDefaultLiveMapTests {
     /// Tests for the `remove` method, covering RTLM21 specification points
     struct RemoveTests {
         // @spec RTLM21c
-        @Test(arguments: [.detached, .failed, .suspended] as [ARTRealtimeChannelState])
-        func throwsErrorForInvalidChannelState(channelState: ARTRealtimeChannelState) async throws {
+        @Test(arguments: [.detached, .failed, .suspended] as [_AblyPluginSupportPrivate.RealtimeChannelState])
+        func throwsErrorForInvalidChannelState(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             let logger = TestLogger()
             let map = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: channelState)

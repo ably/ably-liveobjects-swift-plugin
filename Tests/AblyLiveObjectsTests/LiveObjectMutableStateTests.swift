@@ -1,6 +1,6 @@
+import _AblyPluginSupportPrivate
 import Ably
 @testable import AblyLiveObjects
-import AblyPlugin
 import Testing
 
 /// Tests for `LiveObjectMutableState`.
@@ -119,8 +119,8 @@ struct LiveObjectMutableStateTests {
 
         // @spec RTLO4b2
         @available(iOS 17.0.0, tvOS 17.0.0, *)
-        @Test(arguments: [.detached, .failed] as [ARTRealtimeChannelState])
-        func subscribeThrowsIfChannelIsDetachedOrFailed(channelState: ARTRealtimeChannelState) async throws {
+        @Test(arguments: [.detached, .failed] as [_AblyPluginSupportPrivate.RealtimeChannelState])
+        func subscribeThrowsIfChannelIsDetachedOrFailed(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             var mutableState = LiveObjectMutableState<String>(objectID: "foo")
             let queue = DispatchQueue.main
             let subscriber = Subscriber<String, SubscribeResponse>(callbackQueue: queue)
@@ -237,7 +237,7 @@ struct LiveObjectMutableStateTests {
 
             // @specOneOf(2/3) RTLO4b5b - Check we can unsubscribe using the `response` that's passed to the listener, and that when two updates are emitted back-to-back, the unsubscribe in the first listener causes us to not recieve the second update
             @available(iOS 17.0.0, tvOS 17.0.0, *)
-            @Test(.disabled("This doesn't currently work and I don't think it's a priority, nor do I want to dwell on it right now or rush trying to fix it; see https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/28"))
+            @Test(.disabled("This doesn't currently work and I don't think it's a priority, nor do I want to dwell on it right now or rush trying to fix it; see https://github.com/ably/ably-liveobjects-swift-plugin/issues/28"))
             func unsubscribeInsideCallback_backToBackUpdates() async throws {
                 // Given
                 let store = MutableStateStore<String>(stored: .init(objectID: "foo"))

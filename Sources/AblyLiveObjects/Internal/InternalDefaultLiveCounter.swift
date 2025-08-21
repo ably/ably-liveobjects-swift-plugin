@@ -1,10 +1,10 @@
+internal import _AblyPluginSupportPrivate
 import Ably
-internal import AblyPlugin
 import Foundation
 
 /// This provides the implementation behind ``PublicDefaultLiveCounter``, via internal versions of the ``LiveCounter`` API.
 internal final class InternalDefaultLiveCounter: Sendable {
-    // Used for synchronizing access to all of this instance's mutable state. This is a temporary solution just to allow us to implement `Sendable`, and we'll revisit it in https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/3.
+    // Used for synchronizing access to all of this instance's mutable state. This is a temporary solution just to allow us to implement `Sendable`, and we'll revisit it in https://github.com/ably/ably-liveobjects-swift-plugin/issues/3.
     private let mutex = NSLock()
 
     private nonisolated(unsafe) var mutableState: MutableState
@@ -21,7 +21,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
         }
     }
 
-    private let logger: AblyPlugin.Logger
+    private let logger: Logger
     private let userCallbackQueue: DispatchQueue
     private let clock: SimpleClock
 
@@ -30,7 +30,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
     internal convenience init(
         testsOnly_data data: Double,
         objectID: String,
-        logger: AblyPlugin.Logger,
+        logger: Logger,
         userCallbackQueue: DispatchQueue,
         clock: SimpleClock
     ) {
@@ -40,7 +40,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
     private init(
         data: Double,
         objectID: String,
-        logger: AblyPlugin.Logger,
+        logger: Logger,
         userCallbackQueue: DispatchQueue,
         clock: SimpleClock
     ) {
@@ -56,7 +56,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
     ///   - objectID: The value for the "private objectId field" of RTO5c1b1a.
     internal static func createZeroValued(
         objectID: String,
-        logger: AblyPlugin.Logger,
+        logger: Logger,
         userCallbackQueue: DispatchQueue,
         clock: SimpleClock,
     ) -> Self {

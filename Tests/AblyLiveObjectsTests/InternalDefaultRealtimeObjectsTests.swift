@@ -1,6 +1,6 @@
+import _AblyPluginSupportPrivate
 import Ably
 @testable import AblyLiveObjects
-import AblyPlugin
 import Testing
 
 /// Tests for `InternalDefaultRealtimeObjects`.
@@ -672,8 +672,8 @@ struct InternalDefaultRealtimeObjectsTests {
         // MARK: - RTO1b Tests
 
         // @spec RTO1b
-        @Test(arguments: [.detached, .failed] as [ARTRealtimeChannelState])
-        func getRootThrowsIfChannelIsDetachedOrFailed(channelState: ARTRealtimeChannelState) async throws {
+        @Test(arguments: [.detached, .failed] as [_AblyPluginSupportPrivate.RealtimeChannelState])
+        func getRootThrowsIfChannelIsDetachedOrFailed(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects()
             let coreSDK = MockCoreSDK(channelState: channelState)
 
@@ -1044,8 +1044,8 @@ struct InternalDefaultRealtimeObjectsTests {
     /// Tests for `InternalDefaultRealtimeObjects.createMap`, covering RTO11 specification points (these are largely a smoke test, the rest being tested in ObjectCreationHelpers tests)
     struct CreateMapTests {
         // @spec RTO11d
-        @Test(arguments: [.detached, .failed, .suspended] as [ARTRealtimeChannelState])
-        func throwsIfChannelIsInInvalidState(channelState: ARTRealtimeChannelState) async throws {
+        @Test(arguments: [.detached, .failed, .suspended] as [_AblyPluginSupportPrivate.RealtimeChannelState])
+        func throwsIfChannelIsInInvalidState(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects()
             let coreSDK = MockCoreSDK(channelState: channelState)
             let entries: [String: InternalLiveMapValue] = ["testKey": .string("testValue")]
@@ -1091,7 +1091,7 @@ struct InternalDefaultRealtimeObjectsTests {
             #expect(publishedMessage.operation?.action == .known(.mapCreate))
             let objectID = try #require(publishedMessage.operation?.objectId)
             #expect(objectID.hasPrefix("map:"))
-            // TODO: This is a stopgap; change to use server time per RTO11f5 (https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/50)
+            // TODO: This is a stopgap; change to use server time per RTO11f5 (https://github.com/ably/ably-liveobjects-swift-plugin/issues/50)
             #expect(objectID.contains("1754042434000")) // check contains the mock clock's timestamp in milliseconds
             #expect(publishedMessage.operation?.map?.entries == [
                 "stringKey": .init(data: .init(string: "stringValue")),
@@ -1175,8 +1175,8 @@ struct InternalDefaultRealtimeObjectsTests {
         /// Tests for `InternalDefaultRealtimeObjects.createCounter`, covering RTO12 specification points (these are largely a smoke test, the rest being tested in ObjectCreationHelpers tests)
         struct CreateCounterTests {
             // @spec RTO12d
-            @Test(arguments: [.detached, .failed, .suspended] as [ARTRealtimeChannelState])
-            func throwsIfChannelIsInInvalidState(channelState: ARTRealtimeChannelState) async throws {
+            @Test(arguments: [.detached, .failed, .suspended] as [_AblyPluginSupportPrivate.RealtimeChannelState])
+            func throwsIfChannelIsInInvalidState(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
                 let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects()
                 let coreSDK = MockCoreSDK(channelState: channelState)
 
@@ -1216,7 +1216,7 @@ struct InternalDefaultRealtimeObjectsTests {
                 #expect(publishedMessage.operation?.action == .known(.counterCreate))
                 let objectID = try #require(publishedMessage.operation?.objectId)
                 #expect(objectID.hasPrefix("counter:"))
-                // TODO: This is a stopgap; change to use server time per RTO11f5 (https://github.com/ably/ably-cocoa-liveobjects-plugin/issues/50)
+                // TODO: This is a stopgap; change to use server time per RTO11f5 (https://github.com/ably/ably-liveobjects-swift-plugin/issues/50)
                 #expect(objectID.contains("1754042434000")) // check contains the mock clock's timestamp in milliseconds
                 #expect(publishedMessage.operation?.counter?.count == 10.5)
 
