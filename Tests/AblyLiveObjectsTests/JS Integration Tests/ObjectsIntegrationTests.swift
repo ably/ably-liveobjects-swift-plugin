@@ -353,6 +353,77 @@ extension Trait where Self == ObjectsFixturesTrait {
     static var objectsFixtures: Self { Self() }
 }
 
+/// Limits the number of concurrently-executing tests to a given number.
+///
+/// This trait uses an actor-based counter to ensure that only a limited number of tests can run simultaneously,
+/// which can be useful for preventing resource exhaustion or rate limiting issues.
+private actor ConcurrencyLimitingTrait: TestTrait, TestScoping {
+    private let maxConcurrentTests: Int
+    private var currentRunningTests: Int = 0
+    private var waitingTests: [CheckedContinuation<Void, Never>] = []
+
+    init(maxConcurrentTests: Int) {
+        self.maxConcurrentTests = maxConcurrentTests
+        print("ConcurrencyLimitingTrait initialized with limit: \(maxConcurrentTests)")
+    }
+
+//    nonisolated var isRecursive: Bool {
+//        // if we make this true the tests crash with EXC_BREAKPOINT
+//        false
+//    }
+
+    func provideScope(for _: Test, testCase _: Test.Case?, performing function: () async throws -> Void) async throws {
+        // Wait for a slot to become available
+        await waitForSlot()
+
+        // Increment the counter
+        currentRunningTests += 1
+        print("currentRunningTests increased to \(currentRunningTests)")
+
+        defer {
+            // Decrement the counter and signal waiting tests
+            currentRunningTests -= 1
+            print("currentRunningTests decreased to \(currentRunningTests)")
+            signalWaitingTests()
+        }
+
+        try await function()
+    }
+
+    private func waitForSlot() async {
+        if currentRunningTests < maxConcurrentTests {
+            print("waitForSlot: slot available, currentRunningTests=\(currentRunningTests)")
+            return
+        }
+
+        print("waitForSlot: waiting, currentRunningTests=\(currentRunningTests), waitingTests.count=\(waitingTests.count)")
+        return await withCheckedContinuation { continuation in
+            waitingTests.append(continuation)
+            print("waitForSlot: added to waiting queue, waitingTests.count=\(waitingTests.count)")
+        }
+    }
+
+    private func signalWaitingTests() {
+        // Only signal one test at a time to prevent race conditions
+        // and ensure we don't exceed the limit
+        print("signalWaitingTests: currentRunningTests=\(currentRunningTests), waitingTests.count=\(waitingTests.count)")
+        if !waitingTests.isEmpty, currentRunningTests < maxConcurrentTests {
+            let nextTest = waitingTests.removeFirst()
+            print("signalWaitingTests: resuming next test, waitingTests.count=\(waitingTests.count)")
+            // Resume the next test, which will then call waitForSlot() and increment the counter
+            nextTest.resume()
+        }
+    }
+}
+
+extension Trait where Self == ConcurrencyLimitingTrait {
+    // Use a singleton instance to ensure all tests share the same trait
+    static var concurrencyLimit5: Self {
+        // This will create a single instance that's shared across all tests
+        Self(maxConcurrentTests: 5)
+    }
+}
+
 // MARK: - Utility types
 
 /// A class that isolates arbitrary mutable state to the main actor.
@@ -3231,7 +3302,7 @@ private struct ObjectsIntegrationTests {
         }()
     }
 
-    @Test(arguments: FirstSetOfScenarios.testCases)
+    @Test(.concurrencyLimit5, arguments: FirstSetOfScenarios.testCases)
     func firstSetOfScenarios(testCase: TestCase<FirstSetOfScenarios.Context>) async throws {
         guard !testCase.disabled else {
             withKnownIssue {
@@ -3692,7 +3763,7 @@ private struct ObjectsIntegrationTests {
     }
 
     @available(iOS 17.0.0, tvOS 17.0.0, *)
-    @Test(arguments: SubscriptionCallbacksScenarios.testCases)
+    @Test(.concurrencyLimit5, arguments: SubscriptionCallbacksScenarios.testCases)
     func subscriptionCallbacksScenarios(testCase: TestCase<SubscriptionCallbacksScenarios.Context>) async throws {
         guard !testCase.disabled else {
             withKnownIssue {
@@ -3915,7 +3986,7 @@ private struct ObjectsIntegrationTests {
         ]
     }
 
-    @Test(arguments: TombstonesGCScenarios.testCases)
+    @Test(.concurrencyLimit5, arguments: TombstonesGCScenarios.testCases)
     func tombstonesGCScenarios(testCase: TestCase<TombstonesGCScenarios.Context>) async throws {
         guard !testCase.disabled else {
             withKnownIssue {
