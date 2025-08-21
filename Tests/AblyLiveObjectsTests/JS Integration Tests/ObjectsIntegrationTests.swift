@@ -39,9 +39,24 @@ private func lexicoTimeserial(seriesId: String, timestamp: Int64, counter: Int, 
     return result
 }
 
-func monitorConnectionThenCloseAndFinishAsync(_ realtime: ARTRealtime, action: @escaping @Sendable () async throws -> Void) async throws {
-    defer { realtime.connection.close() }
+nonisolated(unsafe) var realtimeInstanceCount = 0
+let mutex = NSLock()
 
+func monitorConnectionThenCloseAndFinishAsync(_ realtime: ARTRealtime, action: @escaping @Sendable () async throws -> Void) async throws {
+    defer {
+        let localRealtimeInstanceCount = mutex.withLock {
+            realtimeInstanceCount -= 1
+            return realtimeInstanceCount
+        }
+        print("realtimeInstanceCount decreased to \(localRealtimeInstanceCount)")
+        realtime.connection.close()
+    }
+
+    let localRealtimeInstanceCount = mutex.withLock {
+        realtimeInstanceCount += 1
+        return realtimeInstanceCount
+    }
+    print("realtimeInstanceCount increased to \(localRealtimeInstanceCount)")
     try await withThrowingTaskGroup { group in
         // Monitor connection state
         for state in [ARTRealtimeConnectionEvent.failed, .suspended] {
@@ -49,6 +64,7 @@ func monitorConnectionThenCloseAndFinishAsync(_ realtime: ARTRealtime, action: @
                 let (stream, continuation) = AsyncThrowingStream<Void, Error>.makeStream()
 
                 let subscription = realtime.connection.on(state) { _ in
+                    print("monitorConnectionThenCloseAndFinishAsync got error state \(state)")
                     realtime.close()
 
                     let error = NSError(
