@@ -3,22 +3,39 @@ import Foundation
 
 /// A mock delegate that can return predefined objects
 final class MockLiveMapObjectPoolDelegate: LiveMapObjectPoolDelegate {
-    private let objectsMutex: DispatchQueueMutex<[String: ObjectsPool.Entry]>
+    private let poolMutex: DispatchQueueMutex<ObjectsPool>
 
     init(internalQueue: DispatchQueue) {
-        objectsMutex = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: [:])
+        poolMutex = DispatchQueueMutex(
+            dispatchQueue: internalQueue,
+            initialValue: Self.createPool(
+                internalQueue: internalQueue,
+                otherEntries: [:],
+            ),
+        )
+    }
+
+    static func createPool(internalQueue: DispatchQueue, otherEntries: [String: ObjectsPool.Entry]) -> ObjectsPool {
+        .init(
+            // Only otherEntries matters; the others just control the creation of the object at the root key, which none of the tests that use this delegate care about
+            logger: TestLogger(),
+            internalQueue: internalQueue,
+            userCallbackQueue: .main,
+            clock: MockSimpleClock(),
+            testsOnly_otherEntries: otherEntries,
+        )
     }
 
     var objects: [String: ObjectsPool.Entry] {
         get {
-            objectsMutex.withLock { $0 }
+            poolMutex.withLock { $0.entries }
         }
         set {
-            objectsMutex.withLock { $0 = newValue }
+            poolMutex.withLock { $0 = Self.createPool(internalQueue: poolMutex.dispatchQueue, otherEntries: newValue) }
         }
     }
 
-    func nosync_getObjectFromPool(id: String) -> ObjectsPool.Entry? {
-        objectsMutex.withoutLock { $0[id] }
+    var nosync_objectsPool: ObjectsPool {
+        poolMutex.withoutLock { $0 }
     }
 }
