@@ -19,15 +19,10 @@
 
 - I've introduced the `Primitive` type which was omitted from Swift in the first API, because it's now used in multiple places (i.e. there are `value` getters that return one). And for consistency I've updated `Value` to use it, even though it adds a layer of indirection.
 
-## In progress
-
-- `LiveMapOperations.set` now takes a `Value` (i.e. instead of the previous `LiveMapValue`, which I think we need to revisit) — I think that `Value` existed before but we chose not to add, need to look again. but I think that `Value` is being used just for the type system in TS now
-
-- Where have the APIs for getting events out of e.g. a `LiveMap` gone? seems like we no longer have the same-meaning `LiveObject` and it doesn't have the `Update` parameter
-
 ## Not done
 
 - The `AsyncIterableIterator` versions of the subscribe methods; I know how they'll look
+- The public `ObjectMessage` type that JS has added; it's a lot of code but nothing too interesting
 
 ## Questions
 
@@ -47,6 +42,7 @@
 ## Other questions
 
 - It remains unclear whether things like `value` etc can throw given channel state conditions (so all of my `Instance` things are non-throwing at the moment, but maybe they should retain the same `throws` as they currently have?)
+- Why do we have an `Instance` type for a primitive value? An "instance" suggests an "instance of an object", and in this context I'd read that as meaning "instance of a LiveObject".
 
 ## To do at end
 
