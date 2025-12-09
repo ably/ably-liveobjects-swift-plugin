@@ -15,6 +15,8 @@
     - TODO: No, I think that perhaps that's not quite right; it seems like it can also return "shared compacted object references for visited objects"; see https://github.com/ably/ably-js/pull/2122/files. We might need some sort of reference type for this
     - also do we need an API to allow people to try and convert this to a `JSONValue`?
 
+- I've introduced the `Primitive` type which was omitted from Swift in the first API, because it's now used in multiple places (i.e. there are `value` getters that return one). And for consistency I've updated `Value` to use it, even though it adds a layer of indirection.
+
 ## In progress
 
 - `LiveMapOperations.set` now takes a `Value` (i.e. instead of the previous `LiveMapValue`, which I think we need to revisit) — I think that `Value` existed before but we chose not to add, need to look again. but I think that `Value` is being used just for the type system in TS now

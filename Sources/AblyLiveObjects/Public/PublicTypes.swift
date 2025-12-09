@@ -65,12 +65,7 @@ public protocol RealtimeObject: Sendable {
 /// ])
 /// ```
 public enum Value: Sendable {
-    case string(String)
-    case number(Double)
-    case bool(Bool)
-    case data(Data)
-    case jsonArray([JSONValue])
-    case jsonObject([String: JSONValue])
+    case primitive(Primitive)
     case liveMap(LiveMap)
     case liveCounter(LiveCounter)
 }
@@ -79,37 +74,37 @@ public enum Value: Sendable {
 
 extension Value: ExpressibleByDictionaryLiteral {
     public init(dictionaryLiteral elements: (String, JSONValue)...) {
-        self = .jsonObject(.init(uniqueKeysWithValues: elements))
+        self = .primitive(.jsonObject(.init(uniqueKeysWithValues: elements)))
     }
 }
 
 extension Value: ExpressibleByArrayLiteral {
     public init(arrayLiteral elements: JSONValue...) {
-        self = .jsonArray(elements)
+        self = .primitive(.jsonArray(elements))
     }
 }
 
 extension Value: ExpressibleByStringLiteral {
     public init(stringLiteral value: String) {
-        self = .string(value)
+        self = .primitive(.string(value))
     }
 }
 
 extension Value: ExpressibleByIntegerLiteral {
     public init(integerLiteral value: Int) {
-        self = .number(Double(value))
+        self = .primitive(.number(Double(value)))
     }
 }
 
 extension Value: ExpressibleByFloatLiteral {
     public init(floatLiteral value: Double) {
-        self = .number(value)
+        self = .primitive(.number(value))
     }
 }
 
 extension Value: ExpressibleByBooleanLiteral {
     public init(booleanLiteral value: Bool) {
-        self = .bool(value)
+        self = .primitive(.bool(value))
     }
 }
 
@@ -239,6 +234,101 @@ public struct LiveMap: Sendable {
 public struct LiveCounter: Sendable {
     public static func create(initialCount: Double = 0) {
         fatalError("Not implemented")
+    }
+}
+
+public enum Primitive: Sendable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case data(Data)
+    case jsonArray([JSONValue])
+    case jsonObject([String: JSONValue])
+
+    /// If this `Primitive` has case `string`, this returns the associated value. Else, it returns `nil`.
+    public var stringValue: String? {
+        if case let .string(value) = self {
+            return value
+        }
+        return nil
+    }
+
+    /// If this `Primitive` has case `number`, this returns the associated value. Else, it returns `nil`.
+    public var numberValue: Double? {
+        if case let .number(value) = self {
+            return value
+        }
+        return nil
+    }
+
+    /// If this `Primitive` has case `bool`, this returns the associated value. Else, it returns `nil`.
+    public var boolValue: Bool? {
+        if case let .bool(value) = self {
+            return value
+        }
+        return nil
+    }
+
+    /// If this `Primitive` has case `data`, this returns the associated value. Else, it returns `nil`.
+    public var dataValue: Data? {
+        if case let .data(value) = self {
+            return value
+        }
+        return nil
+    }
+
+    /// If this `Primitive` has case `jsonArray`, this returns the associated value. Else, it returns `nil`.
+    public var jsonArrayValue: [JSONValue]? {
+        if case let .jsonArray(value) = self {
+            return value
+        }
+        return nil
+    }
+
+    /// If this `Primitive` has case `jsonObject`, this returns the associated value. Else, it returns `nil`.
+    public var jsonObjectValue: [String: JSONValue]? {
+        if case let .jsonObject(value) = self {
+            return value
+        }
+        return nil
+    }
+}
+
+// MARK: - Primitive ExpressibleBy*Literal conformances
+
+extension Primitive: ExpressibleByDictionaryLiteral {
+    public init(dictionaryLiteral elements: (String, JSONValue)...) {
+        self = .jsonObject(.init(uniqueKeysWithValues: elements))
+    }
+}
+
+extension Primitive: ExpressibleByArrayLiteral {
+    public init(arrayLiteral elements: JSONValue...) {
+        self = .jsonArray(elements)
+    }
+}
+
+extension Primitive: ExpressibleByStringLiteral {
+    public init(stringLiteral value: String) {
+        self = .string(value)
+    }
+}
+
+extension Primitive: ExpressibleByIntegerLiteral {
+    public init(integerLiteral value: Int) {
+        self = .number(Double(value))
+    }
+}
+
+extension Primitive: ExpressibleByFloatLiteral {
+    public init(floatLiteral value: Double) {
+        self = .number(value)
+    }
+}
+
+extension Primitive: ExpressibleByBooleanLiteral {
+    public init(booleanLiteral value: Bool) {
+        self = .bool(value)
     }
 }
 
