@@ -1,11 +1,6 @@
 import Ably
 
-/// A callback used in ``LiveObject`` to listen for updates to the object.
-///
-/// - Parameters:
-///   - update: The update object describing the changes made to the object.
-///   - subscription: A ``SubscribeResponse`` object that allows the provided listener to deregister itself from future updates.
-public typealias LiveObjectUpdateCallback<T> = @Sendable (_ update: sending T, _ subscription: Subscription) -> Void
+public typealias EventCallback<T> = @Sendable (_ event: sending T, _ subscription: Subscription) -> Void
 
 /// The callback used for the events emitted by ``RealtimeObjects``.
 ///
@@ -226,13 +221,13 @@ public protocol LiveCounterInstance: InstanceBase, LiveCounterOperations {
 }
 
 public struct LiveMap: Sendable {
-    public static func create(initialEntries: [String: Value]? = nil) -> Self {
+    public static func create(initialEntries _: [String: Value]? = nil) -> Self {
         fatalError("Not implemented")
     }
 }
 
 public struct LiveCounter: Sendable {
-    public static func create(initialCount: Double = 0) {
+    public static func create(initialCount _: Double = 0) {
         fatalError("Not implemented")
     }
 }
@@ -332,31 +327,49 @@ extension Primitive: ExpressibleByBooleanLiteral {
     }
 }
 
+public struct PathObjectSubscriptionEvent {
+    var object: PathObject
+    var message: ObjectMessage?
+}
+
+public struct PathObjectSubscriptionOptions {
+    var depth: Int?
+}
+
+public struct InstanceSubscriptionEvent {
+    var object: Instance
+    var message: ObjectMessage?
+}
+
+public struct ObjectMessage {
+    // TODO: fill this in; there's nothing too interesting here (just need to avoid a clash with the internal types with the same name)
+}
+
 // TODO: Update for new API
 /*
-// MARK: - AsyncSequence Extensions
+ // MARK: - AsyncSequence Extensions
 
-/// Extension to provide AsyncSequence-based subscription for `LiveObject` updates.
-public extension LiveObject {
-    /// Returns an `AsyncSequence` that emits updates to this `LiveObject`.
-    ///
-    /// This provides an alternative to the callback-based ``subscribe(listener:)`` method,
-    /// allowing you to use Swift's structured concurrency features like `for await` loops.
-    ///
-    /// - Returns: An AsyncSequence that emits ``Update`` values when the object is updated.
-    /// - Throws: An ``ARTErrorInfo`` if the subscription fails.
-    func updates() throws(ARTErrorInfo) -> AsyncStream<Update> {
-        let (stream, continuation) = AsyncStream.makeStream(of: Update.self)
+ /// Extension to provide AsyncSequence-based subscription for `LiveObject` updates.
+ public extension LiveObject {
+     /// Returns an `AsyncSequence` that emits updates to this `LiveObject`.
+     ///
+     /// This provides an alternative to the callback-based ``subscribe(listener:)`` method,
+     /// allowing you to use Swift's structured concurrency features like `for await` loops.
+     ///
+     /// - Returns: An AsyncSequence that emits ``Update`` values when the object is updated.
+     /// - Throws: An ``ARTErrorInfo`` if the subscription fails.
+     func updates() throws(ARTErrorInfo) -> AsyncStream<Update> {
+         let (stream, continuation) = AsyncStream.makeStream(of: Update.self)
 
-        let subscription = try subscribe { update, _ in
-            continuation.yield(update)
-        }
+         let subscription = try subscribe { update, _ in
+             continuation.yield(update)
+         }
 
-        continuation.onTermination = { _ in
-            subscription.unsubscribe()
-        }
+         continuation.onTermination = { _ in
+             subscription.unsubscribe()
+         }
 
-        return stream
-    }
-}
-*/
+         return stream
+     }
+ }
+ */
