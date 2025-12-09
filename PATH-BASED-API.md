@@ -1,7 +1,7 @@
 # Notes on the path-based API in Swift
 
 - Have not updated the docstrings
-- Unlike in my previous go on this, I am just going to use e.g. `PathObject` directly where the spec does, but make it not be generic, i.e. their `AnyFoo` is my `Foo`. Ditto `Instance` (their `AnyInstance` is my `Instance`)
+- Unlike in my previous go on this, I am just going to use e.g. `PathObject` directly where the spec does, but make it not be generic, i.e. their `AnyFoo` is my `Foo`. Ditto `Instance` (their `AnyInstance` is my `Instance`). This is to avoid things like `any AnyInstance` which would look weird, and also because "AnyFoo" already has a meaning in Swift
 - Where things in the JS API appear to be O(1) things that don't throw and have no side-effects, I am making them properties
 
 - `compact()`:
