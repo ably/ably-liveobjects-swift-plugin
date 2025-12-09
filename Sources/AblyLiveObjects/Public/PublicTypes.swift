@@ -232,7 +232,7 @@ public protocol LiveMapPathObject: PathObjectBase, PathObjectCollectionMethods, 
 
     var instance: LiveMapInstance?
 
-    func compact() -> [String: CompactedValue]?
+    func compact() -> [String: JSONValue]?
 }
 
 public protocol LiveMapPathObjectCollectionMethods {

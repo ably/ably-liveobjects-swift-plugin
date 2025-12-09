@@ -5,10 +5,12 @@
 - Where things in the JS API appear to be O(1) things that don't throw and have no side-effects, I am making them properties
 
 - `compact()`:
-    - for `LiveMapPathObject` returns `[String: CompactedValue]?`
+    - for `LiveMapPathObject` returns `[String: JSONValue]?`
     - for `LiveCounterPathObject` returns `Double?`
 
 - Have assumed that where the docstring in JS doesn't mention the method throwing, it doesn't throw (e.g. `LiveMapPathObjectCollectionMethods.{entries, keys}`)
+
+- I haven't done `CompactedValue` because it seems like in the end what you can get out of it is equivalent to a `JSONValue` — check
 
 ## In progress
 
