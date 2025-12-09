@@ -242,6 +242,8 @@ public struct LiveCounter: Sendable {
     }
 }
 
+// TODO: Update for new API
+/*
 // MARK: - AsyncSequence Extensions
 
 /// Extension to provide AsyncSequence-based subscription for `LiveObject` updates.
@@ -267,3 +269,4 @@ public extension LiveObject {
         return stream
     }
 }
+*/
