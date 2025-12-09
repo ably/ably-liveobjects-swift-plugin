@@ -14,7 +14,7 @@
 
 ## Not done
 
-- The `AsyncIterableIterator` versions of the subscribe methods; I know how they'll look
+- The `AsyncIterableIterator` versions of the subscribe methods; I know how they'll look (we already had one similar)
 - The public `ObjectMessage` type that JS has added; it's a lot of code but nothing too interesting
 
 ## Questions

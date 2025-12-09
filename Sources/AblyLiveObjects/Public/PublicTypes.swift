@@ -427,7 +427,7 @@ public indirect enum CompactedValue: Sendable {
     }
 }
 
-// TODO: Update for new API
+// TODO: Update for new API (also note that JS now has a similar one with AsyncIterableIterator
 /*
  // MARK: - AsyncSequence Extensions
 
