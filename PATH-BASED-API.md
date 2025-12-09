@@ -12,6 +12,8 @@
 - Have assumed that where the docstring in JS doesn't mention the method throwing, it doesn't throw (e.g. `LiveMapPathObjectCollectionMethods.{entries, keys}`)
 
 - I haven't done `CompactedValue` because it seems like in the end what you can get out of it is equivalent to a `JSONValue` — check
+    - TODO: No, I think that perhaps that's not quite right; it seems like it can also return "shared compacted object references for visited objects"; see https://github.com/ably/ably-js/pull/2122/files. We might need some sort of reference type for this
+    - also do we need an API to allow people to try and convert this to a `JSONValue`?
 
 ## In progress
 

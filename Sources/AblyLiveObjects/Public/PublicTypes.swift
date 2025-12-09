@@ -281,6 +281,21 @@ public protocol OnLiveObjectLifecycleEventResponse: Sendable {
     func off()
 }
 
+public protocol InstanceBase {
+    var id: String? { get }
+
+    @discardableResult
+    func subscribe(listener: @escaping EventCallback<InstanceSubscriptionEvent>) throws(ARTErrorInfo) -> Subscription
+}
+
+public protocol Instance {
+    func get(key: String) -> Instance?
+
+    var value: Primitive? { get }
+
+    func compact() -> JSONValue?
+}
+
 // MARK: - AsyncSequence Extensions
 
 /// Extension to provide AsyncSequence-based subscription for `LiveObject` updates.
