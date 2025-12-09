@@ -5,8 +5,8 @@
 - Where things in the JS API appear to be O(1) things that don't throw and have no side-effects, I am making them properties
 
 - `compact()`:
-    - for `LiveMapPathObject` returns `[String: JSONValue]?`
-    - for `LiveCounterPathObject` returns `Double?`
+    - for `LiveMapPathObject`, `LiveMapInstance`: returns `[String: JSONValue]?`
+    - for `LiveCounterPathObject`, `LiveCounterInstance`: returns `Double?`
     - for `PathObject` returns `JSONValue?`
 
 - Have assumed that where the docstring in JS doesn't mention the method throwing, it doesn't throw (e.g. `LiveMapPathObjectCollectionMethods.{entries, keys}`)
@@ -32,6 +32,12 @@
     - And then, for consistency, I also just won't have `PathObject` conforming to `AnyOperations`; you have to figure out which type you want, call the e.g. `asLiveCounter` / `asLiveMap` and then call your methods; it's overall a smaller API surface and I think easier to reason about
     - TODO: Find out from Andrii and Mike whether there are any times that you'd actually need to treat a `PathObject` homogeneously
     - TODO: What is the purpose of the `PathObject.get`; do we need it, is there any time that you'd want to use paths without the resolved thing being a map?
+    - I'm going to do the same for `Instance` too; won't have `AnyInstanceCollectionMethods` and `AnyOperations` and will instead just have a `asLiveMap` / `asLiveCounter`
+
+## The `Instance` API
+
+- Given that `Instance` (their `AnyInstance`) doesn't conform to it, I have made `LiveMapInstanceCollectionMethods` not behave as if the instance might not be a map. Concretely, this means that none of the "if not a map" documented behaviours apply, and `size` does not returnan optional.
+    - I think that once you have an `Instance` you should be sure about its type. I don't see why we're trying to provide a homogeneous type for instances
 
 ## To do at end
 

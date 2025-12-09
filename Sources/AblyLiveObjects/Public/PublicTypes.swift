@@ -281,7 +281,7 @@ public protocol OnLiveObjectLifecycleEventResponse: Sendable {
     func off()
 }
 
-public protocol InstanceBase {
+public protocol InstanceBase: AnyObject, Sendable {
     var id: String? { get }
 
     @discardableResult
@@ -291,9 +291,27 @@ public protocol InstanceBase {
 public protocol Instance {
     func get(key: String) -> Instance?
 
+    var asLiveMap: LiveMapInstance? { get }
+    var asLiveCounter: LiveCounterInstance? { get }
+
     var value: Primitive? { get }
 
     func compact() -> JSONValue?
+}
+
+public protocol LiveMapInstance: InstanceBase, LiveMapInstanceCollectionMethods, LiveMapOperations {
+    func get(key: String) -> Instance?
+
+    func compact() -> [String: JSONValue]?
+}
+
+public protocol LiveMapInstanceCollectionMethods {
+    var entries: [(key: String, value: Instance)] { get }
+
+    var keys: [String] { get }
+    var values: [Instance] { get }
+
+    var size: Int { get }
 }
 
 // MARK: - AsyncSequence Extensions
