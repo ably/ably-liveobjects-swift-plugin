@@ -32,24 +32,7 @@ public enum LiveObjectLifecycleEvent: Sendable {
 
 /// Enables the Objects to be read, modified and subscribed to for a channel.
 public protocol RealtimeObject: Sendable {
-    /// Retrieves the root ``LiveMap`` object for Objects on a channel.
-    func getRoot() async throws(ARTErrorInfo) -> any LiveMap
-
-    /// Creates a new ``LiveMap`` object instance with the provided entries.
-    ///
-    /// - Parameter entries: The initial entries for the new ``LiveMap`` object.
-    func createMap(entries: [String: LiveMapValue]) async throws(ARTErrorInfo) -> any LiveMap
-
-    /// Creates a new empty ``LiveMap`` object instance.
-    func createMap() async throws(ARTErrorInfo) -> any LiveMap
-
-    /// Creates a new ``LiveCounter`` object instance with the provided `count` value.
-    ///
-    /// - Parameter count: The initial value for the new ``LiveCounter`` object.
-    func createCounter(count: Double) async throws(ARTErrorInfo) -> any LiveCounter
-
-    /// Creates a new ``LiveCounter`` object instance with a value of zero.
-    func createCounter() async throws(ARTErrorInfo) -> any LiveCounter
+    func get() async throws(ARTErrorInfo) -> LiveMapPathObject
 
     /// Registers the provided listener for the specified event. If `on()` is called more than once with the same listener and event, the listener is added multiple times to its listener registry. Therefore, as an example, assuming the same listener is registered twice using `on()`, and an event is emitted once, the listener would be invoked twice.
     ///
