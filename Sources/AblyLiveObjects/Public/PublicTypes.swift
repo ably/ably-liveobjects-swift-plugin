@@ -223,6 +223,18 @@ public protocol PathObjectBase: AnyObject, Sendable {
     func subscribe(listener: @escaping EventCallback<PathObjectSubscriptionEvent>, options: PathObjectSubscriptionOptions?) throws(ARTErrorInfo) -> Subscription
 }
 
+public protocol PathObject: PathObjectBase, PathObjectCollectionMethods {
+    func get(key: String) -> PathObject
+
+    var asLiveMap: LiveMapPathObject
+    var asLiveCounter: LiveCounterPathObject
+
+    var value: Primitive? { get }
+    var instance: Instance? { get }
+
+    func compact() -> JSONValue?
+}
+
 public protocol PathObjectCollectionMethods {
     func at(path: String) -> PathObject
 }
