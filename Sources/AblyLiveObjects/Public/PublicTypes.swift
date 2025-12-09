@@ -216,7 +216,7 @@ public protocol OnObjectsEventResponse: Sendable {
     func off()
 }
 
-public protocol PathObjectBase {
+public protocol PathObjectBase: AnyObject, Sendable {
     var path: String { get }
 
     @discardableResult
@@ -232,7 +232,7 @@ public protocol LiveMapPathObject: PathObjectBase, PathObjectCollectionMethods, 
 
     var instance: LiveMapInstance?
 
-    func compact() -> [String: CompactedValue]
+    func compact() -> [String: CompactedValue]?
 }
 
 public protocol LiveMapPathObjectCollectionMethods {
@@ -250,46 +250,17 @@ public protocol LiveMapOperations {
     func remove(key: String) async throws(ARTErrorInfo)
 }
 
-/// Describes whether an entry in ``LiveMapUpdate/update`` represents an update or a removal.
-public enum LiveMapUpdateAction: Sendable {
-    /// The value of a key in the map was updated.
-    case updated
-    /// The value of a key in the map was removed.
-    case removed
+public protocol LiveCounterPathObject: PathObjectBase, LiveCounterOperations {
+    var value: Double? { get }
+
+    var instance: LiveCounterInstance?
+
+    func compact() -> Double?
 }
 
-/// Represents an update to a ``LiveMap`` object, describing the keys that were updated or removed.
-public protocol LiveMapUpdate: Sendable {
-    /// An object containing keys from a `LiveMap` that have changed, along with their change status:
-    /// - ``LiveMapUpdateAction/updated`` - the value of a key in the map was updated.
-    /// - ``LiveMapUpdateAction/removed`` - the key was removed from the map.
-    var update: [String: LiveMapUpdateAction] { get }
-}
-
-/// The `LiveCounter` class represents a counter that can be incremented or decremented and is synchronized across clients in realtime.
-public protocol LiveCounter: LiveObject where Update == LiveCounterUpdate {
-    /// Returns the current value of the counter.
-    var value: Double { get throws(ARTErrorInfo) }
-
-    /// Sends an operation to the Ably system to increment the value of this `LiveCounter` object.
-    ///
-    /// This does not modify the underlying data of this object. Instead, the change is applied when
-    /// the published operation is echoed back to the client and applied to the object.
-    /// To get notified when object gets updated, use the ``LiveObject/subscribe(listener:)`` method.
-    ///
-    /// - Parameter amount: The amount by which to increase the counter value.
+public protocol LiveCounterOperations {
     func increment(amount: Double) async throws(ARTErrorInfo)
-
-    /// An alias for calling [`increment(-amount)`](doc:LiveCounter/increment(amount:)).
-    ///
-    /// - Parameter amount: The amount by which to decrease the counter value.
     func decrement(amount: Double) async throws(ARTErrorInfo)
-}
-
-/// Represents an update to a ``LiveCounter`` object.
-public protocol LiveCounterUpdate: Sendable {
-    /// Holds the numerical change to the counter value.
-    var amount: Double { get }
 }
 
 /// Describes the common interface for all conflict-free data structures supported by the Objects.

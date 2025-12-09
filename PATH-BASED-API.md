@@ -5,8 +5,8 @@
 - Where things in the JS API appear to be O(1) things that don't throw and have no side-effects, I am making them properties
 
 - `compact()`:
-    - for LiveMap returns `[String: CompactedValue]`
-    - TODO document the rest
+    - for `LiveMapPathObject` returns `[String: CompactedValue]?`
+    - for `LiveCounterPathObject` returns `Double?`
 
 - Have assumed that where the docstring in JS doesn't mention the method throwing, it doesn't throw (e.g. `LiveMapPathObjectCollectionMethods.{entries, keys}`)
 
@@ -25,3 +25,4 @@
 ## To do at end
 
 - check all of the `throws`
+- check all the `*Base` types are `Sendable`, ditto any new structs
