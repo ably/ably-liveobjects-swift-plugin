@@ -24,12 +24,6 @@ public enum ObjectsEvent: Sendable {
     case synced
 }
 
-/// Describes the events emitted by a ``LiveObject`` object.
-public enum LiveObjectLifecycleEvent: Sendable {
-    /// Indicates that the object has been deleted from the Objects pool and should no longer be interacted with.
-    case deleted
-}
-
 /// Enables the Objects to be read, modified and subscribed to for a channel.
 public protocol RealtimeObject: Sendable {
     func get() async throws(ARTErrorInfo) -> LiveMapPathObject
@@ -273,34 +267,6 @@ public protocol LiveCounterPathObject: PathObjectBase, LiveCounterOperations {
 public protocol LiveCounterOperations {
     func increment(amount: Double) async throws(ARTErrorInfo)
     func decrement(amount: Double) async throws(ARTErrorInfo)
-}
-
-/// Describes the common interface for all conflict-free data structures supported by the Objects.
-public protocol LiveObject: AnyObject, Sendable {
-    /// The type of update event that this object emits.
-    associatedtype Update
-
-    /// Registers a listener that is called each time this LiveObject is updated.
-    ///
-    /// - Parameter listener: An event listener function that is called with an update object whenever this LiveObject is updated.
-    /// - Returns: A ``SubscribeResponse`` object that allows the provided listener to be deregistered from future updates.
-    @discardableResult
-    func subscribe(listener: @escaping LiveObjectUpdateCallback<Update>) throws(ARTErrorInfo) -> Subscription
-
-    /// Deregisters all listeners from updates for this LiveObject.
-    func unsubscribeAll()
-
-    /// Registers the provided listener for the specified event. If `on()` is called more than once with the same listener and event, the listener is added multiple times to its listener registry. Therefore, as an example, assuming the same listener is registered twice using `on()`, and an event is emitted once, the listener would be invoked twice.
-    ///
-    /// - Parameters:
-    ///   - event: The named event to listen for.
-    ///   - callback: The event listener.
-    /// - Returns: A ``OnLiveObjectLifecycleEventResponse`` object that allows the provided listener to be deregistered from future updates.
-    @discardableResult
-    func on(event: LiveObjectLifecycleEvent, callback: @escaping LiveObjectLifecycleEventCallback) -> OnLiveObjectLifecycleEventResponse
-
-    /// Deregisters all registrations, for all events and listeners.
-    func offAll()
 }
 
 /// Object returned from a `subscribe` call, allowing the listener provided in that call to be deregistered.
