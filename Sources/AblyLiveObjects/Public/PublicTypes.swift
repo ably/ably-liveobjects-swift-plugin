@@ -44,7 +44,7 @@ public protocol RealtimeObject: Sendable {
 /// Represents the type of data stored for a given key in a ``LiveMap``.
 /// It may be a primitive value (string, number, boolean, binary data, JSON array, or JSON object), or another ``LiveObject``.
 ///
-/// `LiveMapValue` implements Swift's `ExpressibleBy*Literal` protocols. This, in combination with `JSONValue`'s conformance to these protocols, allows you to write type-safe map values using familiar syntax. For example:
+/// `Value` implements Swift's `ExpressibleBy*Literal` protocols. This, in combination with `JSONValue`'s conformance to these protocols, allows you to write type-safe map values using familiar syntax. For example:
 ///
 /// ```swift
 /// let map = try await channel.objects.createMap(entries: [
@@ -64,7 +64,7 @@ public protocol RealtimeObject: Sendable {
 ///     ],
 /// ])
 /// ```
-public enum LiveMapValue: Sendable, Equatable {
+public enum Value: Sendable, Equatable {
     case string(String)
     case number(Double)
     case bool(Bool)
@@ -76,7 +76,7 @@ public enum LiveMapValue: Sendable, Equatable {
 
     // MARK: - Convenience getters for associated values
 
-    /// If this `LiveMapValue` has case `liveMap`, this returns the associated value. Else, it returns `nil`.
+    /// If this `Value` has case `liveMap`, this returns the associated value. Else, it returns `nil`.
     public var liveMapValue: (any LiveMap)? {
         if case let .liveMap(value) = self {
             return value
@@ -84,7 +84,7 @@ public enum LiveMapValue: Sendable, Equatable {
         return nil
     }
 
-    /// If this `LiveMapValue` has case `liveCounter`, this returns the associated value. Else, it returns `nil`.
+    /// If this `Value` has case `liveCounter`, this returns the associated value. Else, it returns `nil`.
     public var liveCounterValue: (any LiveCounter)? {
         if case let .liveCounter(value) = self {
             return value
@@ -92,7 +92,7 @@ public enum LiveMapValue: Sendable, Equatable {
         return nil
     }
 
-    /// If this `LiveMapValue` has case `string`, this returns the associated value. Else, it returns `nil`.
+    /// If this `Value` has case `string`, this returns the associated value. Else, it returns `nil`.
     public var stringValue: String? {
         if case let .string(value) = self {
             return value
@@ -100,7 +100,7 @@ public enum LiveMapValue: Sendable, Equatable {
         return nil
     }
 
-    /// If this `LiveMapValue` has case `number`, this returns the associated value. Else, it returns `nil`.
+    /// If this `Value` has case `number`, this returns the associated value. Else, it returns `nil`.
     public var numberValue: Double? {
         if case let .number(value) = self {
             return value
@@ -108,7 +108,7 @@ public enum LiveMapValue: Sendable, Equatable {
         return nil
     }
 
-    /// If this `LiveMapValue` has case `bool`, this returns the associated value. Else, it returns `nil`.
+    /// If this `Value` has case `bool`, this returns the associated value. Else, it returns `nil`.
     public var boolValue: Bool? {
         if case let .bool(value) = self {
             return value
@@ -116,7 +116,7 @@ public enum LiveMapValue: Sendable, Equatable {
         return nil
     }
 
-    /// If this `LiveMapValue` has case `data`, this returns the associated value. Else, it returns `nil`.
+    /// If this `Value` has case `data`, this returns the associated value. Else, it returns `nil`.
     public var dataValue: Data? {
         if case let .data(value) = self {
             return value
@@ -124,7 +124,7 @@ public enum LiveMapValue: Sendable, Equatable {
         return nil
     }
 
-    /// If this `LiveMapValue` has case `jsonArray`, this returns the associated value. Else, it returns `nil`.
+    /// If this `Value` has case `jsonArray`, this returns the associated value. Else, it returns `nil`.
     public var jsonArrayValue: [JSONValue]? {
         if case let .jsonArray(value) = self {
             return value
@@ -132,7 +132,7 @@ public enum LiveMapValue: Sendable, Equatable {
         return nil
     }
 
-    /// If this `LiveMapValue` has case `jsonObject`, this returns the associated value. Else, it returns `nil`.
+    /// If this `Value` has case `jsonObject`, this returns the associated value. Else, it returns `nil`.
     public var jsonObjectValue: [String: JSONValue]? {
         if case let .jsonObject(value) = self {
             return value
@@ -142,7 +142,7 @@ public enum LiveMapValue: Sendable, Equatable {
 
     // MARK: - Equatable Implementation
 
-    public static func == (lhs: LiveMapValue, rhs: LiveMapValue) -> Bool {
+    public static func == (lhs: Value, rhs: Value) -> Bool {
         switch (lhs, rhs) {
         case let (.string(lhsValue), .string(rhsValue)):
             lhsValue == rhsValue
@@ -166,39 +166,39 @@ public enum LiveMapValue: Sendable, Equatable {
     }
 }
 
-// MARK: - ExpressibleBy*Literal conformances
+// MARK: - Value ExpressibleBy*Literal conformances
 
-extension LiveMapValue: ExpressibleByDictionaryLiteral {
+extension Value: ExpressibleByDictionaryLiteral {
     public init(dictionaryLiteral elements: (String, JSONValue)...) {
         self = .jsonObject(.init(uniqueKeysWithValues: elements))
     }
 }
 
-extension LiveMapValue: ExpressibleByArrayLiteral {
+extension Value: ExpressibleByArrayLiteral {
     public init(arrayLiteral elements: JSONValue...) {
         self = .jsonArray(elements)
     }
 }
 
-extension LiveMapValue: ExpressibleByStringLiteral {
+extension Value: ExpressibleByStringLiteral {
     public init(stringLiteral value: String) {
         self = .string(value)
     }
 }
 
-extension LiveMapValue: ExpressibleByIntegerLiteral {
+extension Value: ExpressibleByIntegerLiteral {
     public init(integerLiteral value: Int) {
         self = .number(Double(value))
     }
 }
 
-extension LiveMapValue: ExpressibleByFloatLiteral {
+extension Value: ExpressibleByFloatLiteral {
     public init(floatLiteral value: Double) {
         self = .number(value)
     }
 }
 
-extension LiveMapValue: ExpressibleByBooleanLiteral {
+extension Value: ExpressibleByBooleanLiteral {
     public init(booleanLiteral value: Bool) {
         self = .bool(value)
     }
