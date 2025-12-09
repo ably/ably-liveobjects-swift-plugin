@@ -2,8 +2,8 @@ internal import _AblyPluginSupportPrivate
 import Ably
 
 public extension ARTRealtimeChannel {
-    /// A ``RealtimeObjects`` object.
-    var objects: RealtimeObjects {
+    /// A ``RealtimeObject`` object.
+    var object: RealtimeObject {
         fatalError("Not implemented")
     }
 }

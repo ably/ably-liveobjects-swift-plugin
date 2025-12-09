@@ -31,7 +31,7 @@ public enum LiveObjectLifecycleEvent: Sendable {
 }
 
 /// Enables the Objects to be read, modified and subscribed to for a channel.
-public protocol RealtimeObjects: Sendable {
+public protocol RealtimeObject: Sendable {
     /// Retrieves the root ``LiveMap`` object for Objects on a channel.
     func getRoot() async throws(ARTErrorInfo) -> any LiveMap
 
