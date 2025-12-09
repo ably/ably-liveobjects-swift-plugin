@@ -64,7 +64,7 @@ public protocol RealtimeObject: Sendable {
 ///     ],
 /// ])
 /// ```
-public enum Value: Sendable, Equatable {
+public enum Value: Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)
@@ -230,13 +230,13 @@ public protocol LiveCounterInstance: InstanceBase, LiveCounterOperations {
     func compact() -> Double?
 }
 
-public struct LiveMap {
+public struct LiveMap: Sendable {
     public static func create(initialEntries: [String: Value]? = nil) -> Self {
         fatalError("Not implemented")
     }
 }
 
-public struct LiveCounter {
+public struct LiveCounter: Sendable {
     public static func create(initialCount: Double = 0) {
         fatalError("Not implemented")
     }
