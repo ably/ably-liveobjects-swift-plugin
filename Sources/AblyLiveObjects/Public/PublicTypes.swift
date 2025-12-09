@@ -71,8 +71,8 @@ public enum Value: Sendable, Equatable {
     case data(Data)
     case jsonArray([JSONValue])
     case jsonObject([String: JSONValue])
-    case liveMap(any LiveMap)
-    case liveCounter(any LiveCounter)
+    case liveMap(LiveMap)
+    case liveCounter(LiveCounter)
 }
 
 // MARK: - Value ExpressibleBy*Literal conformances
@@ -228,6 +228,18 @@ public protocol LiveCounterInstance: InstanceBase, LiveCounterOperations {
     var value: Double { get }
 
     func compact() -> Double?
+}
+
+public struct LiveMap {
+    public static func create(initialEntries: [String: Value]? = nil) -> Self {
+        fatalError("Not implemented")
+    }
+}
+
+public struct LiveCounter {
+    public static func create(initialCount: Double = 0) {
+        fatalError("Not implemented")
+    }
 }
 
 // MARK: - AsyncSequence Extensions
