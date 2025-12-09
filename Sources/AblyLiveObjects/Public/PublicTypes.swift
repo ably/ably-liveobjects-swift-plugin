@@ -5,7 +5,7 @@ import Ably
 /// - Parameters:
 ///   - update: The update object describing the changes made to the object.
 ///   - subscription: A ``SubscribeResponse`` object that allows the provided listener to deregister itself from future updates.
-public typealias LiveObjectUpdateCallback<T> = @Sendable (_ update: sending T, _ subscription: SubscribeResponse) -> Void
+public typealias LiveObjectUpdateCallback<T> = @Sendable (_ update: sending T, _ subscription: Subscription) -> Void
 
 /// The callback used for the events emitted by ``RealtimeObjects``.
 ///
@@ -216,50 +216,37 @@ public protocol OnObjectsEventResponse: Sendable {
     func off()
 }
 
-/// The `LiveMap` class represents a key-value map data structure, similar to a Swift `Dictionary`, where all changes are synchronized across clients in realtime.
-/// Conflicts in a LiveMap are automatically resolved with last-write-wins (LWW) semantics,
-/// meaning that if two clients update the same key in the map, the update with the most recent timestamp wins.
-///
-/// Keys must be strings. Values can be another ``LiveObject``, or a primitive type, such as a string, number, boolean, JSON-serializable object or array, or binary data.
-public protocol LiveMap: LiveObject where Update == LiveMapUpdate {
-    /// Returns the value associated with a given key. Returns `nil` if the key doesn't exist in a map or if the associated ``LiveObject`` has been deleted.
-    ///
-    /// Always returns `nil` if this map object is deleted.
-    ///
-    /// - Parameter key: The key to retrieve the value for.
-    /// - Returns: A ``LiveObject``, a primitive type (string, number, boolean, JSON-serializable object or array, or binary data) or `nil` if the key doesn't exist in a map or the associated ``LiveObject`` has been deleted. Always `nil` if this map object is deleted.
-    func get(key: String) throws(ARTErrorInfo) -> LiveMapValue?
+public protocol PathObjectBase {
+    var path: String { get }
 
-    /// Returns the number of key-value pairs in the map.
-    var size: Int { get throws(ARTErrorInfo) }
+    @discardableResult
+    func subscribe(listener: @escaping EventCallback<PathObjectSubscriptionEvent>, options: PathObjectSubscriptionOptions?) throws(ARTErrorInfo) -> Subscription
+}
 
-    /// Returns an array of key-value pairs for every entry in the map.
-    var entries: [(key: String, value: LiveMapValue)] { get throws(ARTErrorInfo) }
+public protocol PathObjectCollectionMethods {
+    func at(path: String) -> PathObject
+}
 
-    /// Returns an array of keys in the map.
-    var keys: [String] { get throws(ARTErrorInfo) }
+public protocol LiveMapPathObject: PathObjectBase, PathObjectCollectionMethods, LiveMapPathObjectCollectionMethods, LiveMapOperations {
+    func get(key: String) -> PathObject
 
-    /// Returns an iterable of values in the map.
-    var values: [LiveMapValue] { get throws(ARTErrorInfo) }
+    var instance: LiveMapInstance?
 
-    /// Sends an operation to the Ably system to set a key on this `LiveMap` object to a specified value.
-    ///
-    /// This does not modify the underlying data of this object. Instead, the change is applied when
-    /// the published operation is echoed back to the client and applied to the object.
-    /// To get notified when object gets updated, use the ``LiveObject/subscribe(listener:)`` method.
-    ///
-    /// - Parameters:
-    ///   - key: The key to set the value for.
-    ///   - value: The value to assign to the key.
-    func set(key: String, value: LiveMapValue) async throws(ARTErrorInfo)
+    func compact() -> [String: CompactedValue]
+}
 
-    /// Sends an operation to the Ably system to remove a key from this `LiveMap` object.
-    ///
-    /// This does not modify the underlying data of this object. Instead, the change is applied when
-    /// the published operation is echoed back to the client and applied to the object.
-    /// To get notified when object gets updated, use the ``LiveObject/subscribe(listener:)`` method.
-    ///
-    /// - Parameter key: The key to remove.
+public protocol LiveMapPathObjectCollectionMethods {
+    var entries: [(key: String, value: PathObject)] { get }
+
+    var keys: [String] { get }
+    var values: [PathObject] { get }
+
+    var size: Int? { get }
+}
+
+public protocol LiveMapOperations {
+    func set(key: String, value: Value) async throws(ARTErrorInfo)
+
     func remove(key: String) async throws(ARTErrorInfo)
 }
 
@@ -315,7 +302,7 @@ public protocol LiveObject: AnyObject, Sendable {
     /// - Parameter listener: An event listener function that is called with an update object whenever this LiveObject is updated.
     /// - Returns: A ``SubscribeResponse`` object that allows the provided listener to be deregistered from future updates.
     @discardableResult
-    func subscribe(listener: @escaping LiveObjectUpdateCallback<Update>) throws(ARTErrorInfo) -> SubscribeResponse
+    func subscribe(listener: @escaping LiveObjectUpdateCallback<Update>) throws(ARTErrorInfo) -> Subscription
 
     /// Deregisters all listeners from updates for this LiveObject.
     func unsubscribeAll()
@@ -334,7 +321,7 @@ public protocol LiveObject: AnyObject, Sendable {
 }
 
 /// Object returned from a `subscribe` call, allowing the listener provided in that call to be deregistered.
-public protocol SubscribeResponse: Sendable {
+public protocol Subscription: Sendable {
     /// Deregisters the listener passed to the `subscribe` call.
     func unsubscribe()
 }
