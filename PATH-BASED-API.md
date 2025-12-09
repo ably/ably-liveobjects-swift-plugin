@@ -3,20 +3,13 @@
 - Have not updated the docstrings
 - Unlike in my previous go on this, I am just going to use e.g. `PathObject` directly where the spec does, but make it not be generic, i.e. their `AnyFoo` is my `Foo`. Ditto `Instance` (their `AnyInstance` is my `Instance`). This is to avoid things like `any AnyInstance` which would look weird, and also because "AnyFoo" already has a meaning in Swift
 - Where things in the JS API appear to be O(1) things that don't throw and have no side-effects, I am making them properties
-
 - `compact()`:
-
-  - for `LiveMapPathObject`, `LiveMapInstance`: returns `[String: JSONValue]?`
+  - for `LiveMapPathObject`, `LiveMapInstance`: returns `CompactedValue.ObjectReference?`
   - for `LiveCounterPathObject`, `LiveCounterInstance`: returns `Double?`
-  - for `PathObject` returns `JSONValue?`
-
+  - for `PathObject` returns `CompactedValue?`
 - Have assumed that where the docstring in JS doesn't mention the method throwing, it doesn't throw (e.g. `LiveMapPathObjectCollectionMethods.{entries, keys}`)
-
-- I haven't done `CompactedValue` because it seems like in the end what you can get out of it is equivalent to a `JSONValue` — check
-
-  - TODO: No, I think that perhaps that's not quite right; it seems like it can also return "shared compacted object references for visited objects"; see https://github.com/ably/ably-js/pull/2122/files. We might need some sort of reference type for this
+- `CompactedValue` is represented by a JSON-like type whose collection cases have class instances as their associated data, to allow cycles (see https://github.com/ably/ably-js/pull/2122/files)
   - also do we need an API to allow people to try and convert this to a `JSONValue`?
-
 - I've introduced the `Primitive` type which was omitted from Swift in the first API, because it's now used in multiple places (i.e. there are `value` getters that return one). And for consistency I've updated `Value` to use it, even though it adds a layer of indirection.
 
 ## Not done

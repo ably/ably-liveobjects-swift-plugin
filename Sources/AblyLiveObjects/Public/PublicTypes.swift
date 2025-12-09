@@ -125,7 +125,7 @@ public protocol PathObject: PathObjectBase, PathObjectCollectionMethods {
     var value: Primitive? { get }
     var instance: Instance? { get }
 
-    func compact() -> JSONValue?
+    func compact() -> CompactedValue?
 }
 
 public protocol PathObjectCollectionMethods {
@@ -137,7 +137,7 @@ public protocol LiveMapPathObject: PathObjectBase, PathObjectCollectionMethods, 
 
     var instance: LiveMapInstance? { get }
 
-    func compact() -> [String: JSONValue]?
+    func compact() -> CompactedValue.ObjectReference?
 }
 
 public protocol LiveMapPathObjectCollectionMethods {
@@ -196,13 +196,13 @@ public protocol Instance {
 
     var value: Primitive? { get }
 
-    func compact() -> JSONValue?
+    func compact() -> CompactedValue?
 }
 
 public protocol LiveMapInstance: InstanceBase, LiveMapInstanceCollectionMethods, LiveMapOperations {
     func get(key: String) -> Instance?
 
-    func compact() -> [String: JSONValue]?
+    func compact() -> CompactedValue.ObjectReference?
 }
 
 public protocol LiveMapInstanceCollectionMethods {
@@ -343,6 +343,88 @@ public struct InstanceSubscriptionEvent {
 
 public struct ObjectMessage {
     // TODO: fill this in; there's nothing too interesting here (just need to avoid a clash with the internal types with the same name)
+}
+
+// A ``JSON``-like value whose `object` and `array` cases may contain cyclical references.
+public indirect enum CompactedValue: Sendable {
+    case object(ObjectReference)
+    case array(ArrayReference)
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case null
+
+    public final class ObjectReference: Sendable {
+        public let value: [String: CompactedValue]
+
+        init(value: [String: CompactedValue]) {
+            self.value = value
+        }
+    }
+
+    public final class ArrayReference: Sendable {
+        public let value: [CompactedValue]
+
+        init(value: [CompactedValue]) {
+            self.value = value
+        }
+    }
+
+    // MARK: - Convenience getters for associated values
+
+    /// If this `CompactedValue` has case `object`, this returns the associated value. Else, it returns `nil`.
+    public var objectValue: ObjectReference? {
+        if case let .object(objectValue) = self {
+            objectValue
+        } else {
+            nil
+        }
+    }
+
+    /// If this `CompactedValue` has case `array`, this returns the associated value. Else, it returns `nil`.
+    public var arrayValue: ArrayReference? {
+        if case let .array(arrayValue) = self {
+            arrayValue
+        } else {
+            nil
+        }
+    }
+
+    /// If this `CompactedValue` has case `string`, this returns the associated value. Else, it returns `nil`.
+    public var stringValue: String? {
+        if case let .string(stringValue) = self {
+            stringValue
+        } else {
+            nil
+        }
+    }
+
+    /// If this `CompactedValue` has case `number`, this returns the associated value. Else, it returns `nil`.
+    public var numberValue: Double? {
+        if case let .number(numberValue) = self {
+            numberValue
+        } else {
+            nil
+        }
+    }
+
+    /// If this `CompactedValue` has case `bool`, this returns the associated value. Else, it returns `nil`.
+    public var boolValue: Bool? {
+        if case let .bool(boolValue) = self {
+            boolValue
+        } else {
+            nil
+        }
+    }
+
+    /// Returns true if and only if this `CompactedValue` has case `null`.
+    public var isNull: Bool {
+        if case .null = self {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 // TODO: Update for new API
