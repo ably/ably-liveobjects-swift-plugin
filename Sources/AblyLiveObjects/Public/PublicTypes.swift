@@ -10,7 +10,7 @@ public typealias LiveObjectUpdateCallback<T> = @Sendable (_ update: sending T, _
 /// The callback used for the events emitted by ``RealtimeObjects``.
 ///
 /// - Parameter subscription: An ``OnObjectsEventResponse`` object that allows the provided listener to deregister itself from future updates.
-public typealias ObjectsEventCallback = @Sendable (_ subscription: OnObjectsEventResponse) -> Void
+public typealias ObjectsEventCallback = @Sendable (_ subscription: StatusSubscription) -> Void
 
 /// The callback used for the lifecycle events emitted by ``LiveObject``.
 /// - Parameter subscription: A ``OnLiveObjectLifecycleEventResponse`` object that allows the provided listener to deregister itself from future updates.
@@ -35,7 +35,7 @@ public protocol RealtimeObject: Sendable {
     ///   - callback: The event listener.
     /// - Returns: An ``OnObjectsEventResponse`` object that allows the provided listener to be deregistered from future updates.
     @discardableResult
-    func on(event: ObjectsEvent, callback: @escaping ObjectsEventCallback) -> OnObjectsEventResponse
+    func on(event: ObjectsEvent, callback: @escaping ObjectsEventCallback) -> StatusSubscription
 
     /// Deregisters all registrations, for all events and listeners.
     func offAll()
@@ -205,7 +205,7 @@ extension LiveMapValue: ExpressibleByBooleanLiteral {
 }
 
 /// Object returned from an `on` call, allowing the listener provided in that call to be deregistered.
-public protocol OnObjectsEventResponse: Sendable {
+public protocol StatusSubscription: Sendable {
     /// Deregisters the listener passed to the `on` call.
     func off()
 }
