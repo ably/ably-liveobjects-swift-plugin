@@ -220,8 +220,8 @@ public protocol PathObjectBase: AnyObject, Sendable {
 public protocol PathObject: PathObjectBase, PathObjectCollectionMethods {
     func get(key: String) -> PathObject
 
-    var asLiveMap: LiveMapPathObject
-    var asLiveCounter: LiveCounterPathObject
+    var asLiveMap: LiveMapPathObject { get }
+    var asLiveCounter: LiveCounterPathObject { get }
 
     var value: Primitive? { get }
     var instance: Instance? { get }
@@ -236,7 +236,7 @@ public protocol PathObjectCollectionMethods {
 public protocol LiveMapPathObject: PathObjectBase, PathObjectCollectionMethods, LiveMapPathObjectCollectionMethods, LiveMapOperations {
     func get(key: String) -> PathObject
 
-    var instance: LiveMapInstance?
+    var instance: LiveMapInstance? { get }
 
     func compact() -> [String: JSONValue]?
 }
@@ -259,7 +259,7 @@ public protocol LiveMapOperations {
 public protocol LiveCounterPathObject: PathObjectBase, LiveCounterOperations {
     var value: Double? { get }
 
-    var instance: LiveCounterInstance?
+    var instance: LiveCounterInstance? { get }
 
     func compact() -> Double?
 }
