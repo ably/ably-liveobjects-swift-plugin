@@ -291,6 +291,7 @@ public protocol InstanceBase: AnyObject, Sendable {
 public protocol Instance {
     func get(key: String) -> Instance?
 
+    // These return `nil` if the underlying instance is not of the referenced type.
     var asLiveMap: LiveMapInstance? { get }
     var asLiveCounter: LiveCounterInstance? { get }
 
@@ -312,6 +313,12 @@ public protocol LiveMapInstanceCollectionMethods {
     var values: [Instance] { get }
 
     var size: Int { get }
+}
+
+public protocol LiveCounterInstance: InstanceBase, LiveCounterOperations {
+    var value: Double { get }
+
+    func compact() -> Double?
 }
 
 // MARK: - AsyncSequence Extensions

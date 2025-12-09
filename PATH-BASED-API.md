@@ -33,11 +33,16 @@
     - TODO: Find out from Andrii and Mike whether there are any times that you'd actually need to treat a `PathObject` homogeneously
     - TODO: What is the purpose of the `PathObject.get`; do we need it, is there any time that you'd want to use paths without the resolved thing being a map?
     - I'm going to do the same for `Instance` too; won't have `AnyInstanceCollectionMethods` and `AnyOperations` and will instead just have a `asLiveMap` / `asLiveCounter`
+    - (An alternative option for just handling the return type option would be to have an `Entries` enum that collects the different collections' `entries` return values)
 
 ## The `Instance` API
 
-- Given that `Instance` (their `AnyInstance`) doesn't conform to it, I have made `LiveMapInstanceCollectionMethods` not behave as if the instance might not be a map. Concretely, this means that none of the "if not a map" documented behaviours apply, and `size` does not returnan optional.
+- Given that `Instance` (their `AnyInstance`) doesn't conform to it, I have made `LiveMapInstanceCollectionMethods` not behave as if the instance might not be a map. Concretely, this means that none of the "if not a map" documented behaviours apply, and `size` does not returnan optional. (Ditto `LiveCounterInstance.value` returns non-optional)
     - I think that once you have an `Instance` you should be sure about its type. I don't see why we're trying to provide a homogeneous type for instances
+
+## Other questions
+
+- It remains unclear whether things like `value` etc can throw given channel state conditions (so all of my `Instance` things are non-throwing at the moment, but maybe they should retain the same `throws` as they currently have?)
 
 ## To do at end
 
