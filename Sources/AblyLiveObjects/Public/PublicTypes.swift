@@ -199,8 +199,10 @@ public protocol InstanceBase: AnyObject, Sendable {
 public protocol Instance {
     func get(key: String) -> Instance?
 
-    // These return `nil` if the underlying instance is not of the referenced type.
+    /// A proxy for this Instance, which exposes the LiveMap API. Returns `nil` if the underlying instance is not a LiveMap.
     var asLiveMap: LiveMapInstance? { get }
+
+    /// A proxy for this Instance, which exposes the LiveCounter API. Returns `nil` if the underlying instance is not a LiveMap.
     var asLiveCounter: LiveCounterInstance? { get }
 
     var value: Primitive? { get }
