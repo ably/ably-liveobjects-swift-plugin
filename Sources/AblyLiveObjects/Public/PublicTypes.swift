@@ -357,7 +357,7 @@ public struct ObjectMessage {
 }
 
 // A ``JSONValue``-like value whose `object` and `array` cases may contain cyclical references.
-public indirect enum CompactedValue: Sendable {
+public enum CompactedValue: Sendable {
     case object(ObjectReference)
     case array(ArrayReference)
     case string(String)
