@@ -238,7 +238,7 @@ public struct LiveMap: Sendable {
 }
 
 public struct LiveCounter: Sendable {
-    public static func create(initialCount _: Double = 0) {
+    public static func create(initialCount _: Double = 0) -> Self {
         fatalError("Not implemented")
     }
 }
