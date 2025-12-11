@@ -29,7 +29,7 @@
 
 ## The `Instance` API
 
-- Given that `Instance` (their `AnyInstance`) doesn't conform to it, I have made `LiveMapInstanceCollectionMethods` not behave as if the instance might not be a map. Concretely, this means that none of the "if not a map" documented behaviours apply, and `size` does not returnan optional. (Ditto `LiveCounterInstance.value` returns non-optional)
+- Given that `Instance` (their `AnyInstance`) doesn't conform to it, I have made `LiveMapInstanceCollectionMethods` not behave as if the instance might not be a map. Concretely, this means that none of the "if not a map" documented behaviours apply, and `size` does not return an optional. (Ditto `LiveCounterInstance.value` returns non-optional)
   - I think that once you have an `Instance` you should be sure about its type. I don't see why we're trying to provide a homogeneous type for instances
 
 ## Other questions

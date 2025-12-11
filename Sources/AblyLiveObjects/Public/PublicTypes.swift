@@ -119,7 +119,16 @@ public protocol PathObjectBase: AnyObject, Sendable {
 public protocol PathObject: PathObjectBase, PathObjectCollectionMethods {
     func get(key: String) -> PathObject
 
+    // Note that PathObject does not offer any of the LiveMap or LiveCounter methods. To access those, you must first convert this PathObject to a type-specific PathObject using asLiveMap or asLiveCounter.
+
+    /// A proxy for this PathObject, which exposes the LiveMap API. As in JS, LiveMap methods subsequently called on this proxy will fail or return some empty value if the resolved value at this path is not a LiveMap.
+    ///
+    /// - Note: Accessing this property does not perform any resolution of the value contained at the path.
     var asLiveMap: LiveMapPathObject { get }
+
+    /// A proxy for this PathObject, which exposes the LiveCounter API. As in JS, LiveMap methods subsequently called on this proxy will fail or return some empty value if the resolved value at this path is not a LiveCounter.
+    ///
+    /// - Note: This does not perform any resolution of the value contained at the path.
     var asLiveCounter: LiveCounterPathObject { get }
 
     var value: Primitive? { get }
