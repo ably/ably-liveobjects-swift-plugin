@@ -11,6 +11,9 @@ protocol LiveMapShape {
 
     // TODO: currently this is _only_ used for the convenience extension that allows key path lookups to make things neater
     associatedtype LiveMapKeys
+
+    /// An entry that can be passed to `ShapedLiveMap.create()`.
+    associatedtype InitialEntry: LiveMapInitialEntry
 }
 
 // TODO this name isn't great, it's not really a key, it's a key description (but I guess a KeyPath is not just a "key path")
@@ -19,9 +22,26 @@ protocol LiveMapKey<Shape, Value>: Sendable {
     associatedtype Value
 }
 
-struct ShapedLiveMap<Shape: LiveMapShape>: Sendable {
-    // TODO this needs a `create()` with constraints
+protocol LiveMapInitialEntry {
+    /// A key-value pair to use when creating the LiveMap.
+    var toKeyValuePair: (String, Value) { get }
+}
 
+struct ShapedLiveMap<Shape: LiveMapShape>: Sendable {
+    private let liveMap: LiveMap
+
+    public static func create(initialEntries: [Shape.InitialEntry] = []) -> Self {
+        // TODO: There's a mismatch here between this using an array and LiveMap using a dictionary
+        let liveMap = LiveMap.create(initialEntries: .init(uniqueKeysWithValues: initialEntries.map(\.toKeyValuePair)))
+        return .init(liveMap: liveMap)
+    }
+
+    // TODO: we don't _really_ want this to have to be public
+
+    /// A type-erased representation of this ShapedLiveMap.
+    public var toLiveMap: LiveMap {
+        return liveMap
+    }
 }
 
 // TODO: naming TBD
@@ -164,8 +184,6 @@ extension ShapedLiveMapPathObject {
     func get<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> LiveCounterPathObject where Key.Shape == Shape, Key.Value == LiveCounter {
         get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
     }
-
-    // TODO create `set()` variants with key paths
 }
 
 // MARK: - RealtimeObject `get` implementation for shaped LiveMaps
@@ -213,6 +231,16 @@ func keyPathsExampleWithChannel(_ channel: ARTRealtimeChannel) async throws {
 
     try await myChannelPathObject.set(keyAt: \.topLevelCounter, value: LiveCounter.create(initialCount: 3))
     try await topLevelCounter.increment(amount: 4)
+
+    try await myChannelPathObject.set(
+        keyAt: \.topLevelMap,
+        value: .create(
+            // TODO not decided if this is the API I want yet (that is, `Entry` being an enum); see the other places where I need entries and figure it out
+            initialEntries: [
+                .nestedEntry("Goodbye")
+            ]
+        )
+    )
 }
 
 
@@ -232,6 +260,22 @@ extension MyChannelObject: LiveMapShape {
         static let topLevelCounter: some LiveMapKey<MyChannelObject, LiveCounter> = Key(rawKey: "topLevelCounter")
         static let topLevelMap: some LiveMapKey<MyChannelObject, ShapedLiveMap<TopLevelMap>> = Key(rawKey: "topLevelCounter")
     }
+
+    enum InitialEntry: LiveMapInitialEntry {
+        case topLevelCounter(LiveCounter)
+        case topLevelMap(ShapedLiveMap<TopLevelMap>)
+
+        // TODO: this might be a bit tricky for codegen as-is, because ideally we wouldn't have to understand the meaning of the shape's properties; we just want to copy and paste their types. Might be better to have an init(containerCreationValue:) on Value, overloaded for all of the supported types. Although according to ChatGPT you can perform full type resolution inside a macro expansion now: https://chatgpt.com/c/693c6ec0-32d0-8333-8776-1145397c263f
+
+        var toKeyValuePair: (String, Value) {
+            switch self {
+            case .topLevelCounter(let liveCounter):
+                ("topLevelCounter", .liveCounter(liveCounter))
+            case .topLevelMap(let shapedLiveMap):
+                ("topLevelMap", .liveMap(shapedLiveMap.toLiveMap))
+            }
+        }
+    }
 }
 
 extension MyChannelObject.TopLevelMap: LiveMapShape {
@@ -244,6 +288,17 @@ extension MyChannelObject.TopLevelMap: LiveMapShape {
         }
 
         static let nestedEntry: some LiveMapKey<MyChannelObject.TopLevelMap, String> = Key(rawKey: "nestedEntry")
+    }
+
+    enum InitialEntry: LiveMapInitialEntry {
+        case nestedEntry(String)
+
+        var toKeyValuePair: (String, Value) {
+            switch self {
+            case .nestedEntry(let string):
+                ("nestedEntry", .primitive(.string(string)))
+            }
+        }
     }
 }
 
