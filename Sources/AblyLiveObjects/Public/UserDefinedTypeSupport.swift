@@ -33,12 +33,39 @@ protocol TypedPrimitivePathObject<Value> {
     var value: Value? { get }
 }
 
+// TODO: How is Instance going to work? is it actually going to check types? if so will it do it all the way down through nested maps etc?
+
 protocol ShapedLiveMapPathObject<Shape> {
     associatedtype Shape: LiveMapShape
 
-    // TODO: we need set, entries etc
-    // TODO: what do keys and entries return when it's not a known key?
-    // TODO: you should still be able to interact with this without shape too
+    // TODO: we need keys and entries (what does entries return, and how do they both handle an unknown key?). I think that perhaps `keys` could just return [String], and that the LiveMapShape will need to define a Entry associated type (most likely an enum in practice) that can create itself from a given key and PathObject (or fail to do so in which case we'll have to return some "unknown" type)
+    // TODO: you should still be able to interact with this without shape too — I think the best thing would be to make _this_ type only work with Key but have a way to turn it into a normal LiveMapPathObject
+
+    // Variants of `set()`
+
+    // All the set() operations that this needs to be able to support. (I don't think we can do better than this because this type isn't expected to be able to handle arbitrary values, even if a user can form a Key that has one; that is, we can't just have a single one that takes Key.Value); unless we end up being able to impose constraints on Key.Value somehow but I don't really want to start adding extensions to String etc
+
+    // For entries of each of the primitive types
+    func set<Key: LiveMapKey>(key: Key, value: String) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == String
+    func set<Key: LiveMapKey>(key: Key, value: Double) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == Double
+    func set<Key: LiveMapKey>(key: Key, value: Bool) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == Bool
+    func set<Key: LiveMapKey>(key: Key, value: Data) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == Data
+    func set<Key: LiveMapKey>(key: Key, value: [JSONValue]) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == JSONValue
+    func set<Key: LiveMapKey>(key: Key, value: [String: JSONValue]) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == [String: JSONValue]
+
+    // For LiveMap entries
+    func set<Key: LiveMapKey>(key: Key, value: LiveMap) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == LiveMap
+    func set<Key: LiveMapKey, EntryShape: LiveMapShape>(key: Key, value: ShapedLiveMap<EntryShape>) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == ShapedLiveMap<EntryShape>
+
+    // For LiveCounter entries
+    func set<Key: LiveMapKey>(key: Key) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == LiveCounter
+
+    // `remove()`
+
+    func remove<Key: LiveMapKey>(key: Key) async throws(ARTErrorInfo)
+
+    // Variants of `get()`
+
     // I don't _think_ there is a less verbose way of figuring out the shape of the PathObject
 
     // For entries of each of the primitive types
@@ -59,6 +86,8 @@ protocol ShapedLiveMapPathObject<Shape> {
 
 // Convenience extensions for specifying a key by using a key path into a static member of Shape.LiveMapKeys. TODO improve naming: it's a bit confusing because it's a key path _into a set of keys_ (i.e. not into the shape itself). The reason we use key paths instead of implicit member access is because it doesn't require that the "member" actually have that type
 extension ShapedLiveMapPathObject {
+    // Getters
+
     func get<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> any TypedPrimitivePathObject<String> where Key.Shape == Shape, Key.Value == String {
         get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
     }
@@ -91,6 +120,8 @@ extension ShapedLiveMapPathObject {
     func get<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> LiveCounterPathObject where Key.Shape == Shape, Key.Value == LiveCounter {
         get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
     }
+
+    // TODO create `set()` variants with key paths
 }
 
 // MARK: - RealtimeObject `get` implementation for shaped LiveMaps
@@ -123,6 +154,8 @@ func exampleWithChannel(_ channel: ARTRealtimeChannel) async throws {
 
     let nestedEntry = topLevelMap.get(key: MyChannelObject.TopLevelMap.LiveMapKeys.nestedEntry)
 }
+
+// TODO create examples with `set()`
 
 // Example that uses the key paths convenience methods for get()
 func keyPathsExampleWithChannel(_ channel: ARTRealtimeChannel) async throws {
