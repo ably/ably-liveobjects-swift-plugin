@@ -58,7 +58,7 @@ protocol ShapedLiveMapPathObject<Shape> {
     func set<Key: LiveMapKey, EntryShape: LiveMapShape>(key: Key, value: ShapedLiveMap<EntryShape>) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == ShapedLiveMap<EntryShape>
 
     // For LiveCounter entries
-    func set<Key: LiveMapKey>(key: Key) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == LiveCounter
+    func set<Key: LiveMapKey>(key: Key, value: LiveCounter) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == LiveCounter
 
     // `remove()`
 
@@ -86,7 +86,51 @@ protocol ShapedLiveMapPathObject<Shape> {
 
 // Convenience extensions for specifying a key by using a key path into a static member of Shape.LiveMapKeys. TODO improve naming: it's a bit confusing because it's a key path _into a set of keys_ (i.e. not into the shape itself). The reason we use key paths instead of implicit member access is because it doesn't require that the "member" actually have that type
 extension ShapedLiveMapPathObject {
-    // Getters
+    // `set()`
+
+    func set<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>, value: String) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == String {
+        try await set(key: Shape.LiveMapKeys.self[keyPath: keyPath], value: value)
+    }
+
+    func set<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>, value: Double) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == Double {
+        try await set(key: Shape.LiveMapKeys.self[keyPath: keyPath], value: value)
+    }
+
+    func set<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>, value: Bool) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == Bool {
+        try await set(key: Shape.LiveMapKeys.self[keyPath: keyPath], value: value)
+    }
+
+    func set<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>, value: Data) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == Data {
+        try await set(key: Shape.LiveMapKeys.self[keyPath: keyPath], value: value)
+    }
+
+    func set<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>, value: [JSONValue]) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == JSONValue {
+        try await set(key: Shape.LiveMapKeys.self[keyPath: keyPath], value: value)
+    }
+
+    func set<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>, value: [String: JSONValue]) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == [String: JSONValue] {
+        try await set(key: Shape.LiveMapKeys.self[keyPath: keyPath], value: value)
+    }
+
+    func set<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>, value: LiveMap) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == LiveMap {
+        try await set(key: Shape.LiveMapKeys.self[keyPath: keyPath], value: value)
+    }
+
+    func set<Key: LiveMapKey, EntryShape: LiveMapShape>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>, value: ShapedLiveMap<EntryShape>) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == ShapedLiveMap<EntryShape> {
+        try await set(key: Shape.LiveMapKeys.self[keyPath: keyPath], value: value)
+    }
+
+    func set<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>, value: LiveCounter) async throws(ARTErrorInfo) where Key.Shape == Shape, Key.Value == LiveCounter {
+        try await set(key: Shape.LiveMapKeys.self[keyPath: keyPath], value: value)
+    }
+
+    // `remove()`
+
+    func remove<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) async throws(ARTErrorInfo) where Key.Shape == Shape {
+        try await remove(key: Shape.LiveMapKeys.self[keyPath: keyPath])
+    }
+
+    // `get()`
 
     func get<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> any TypedPrimitivePathObject<String> where Key.Shape == Shape, Key.Value == String {
         get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
@@ -155,9 +199,7 @@ func exampleWithChannel(_ channel: ARTRealtimeChannel) async throws {
     let nestedEntry = topLevelMap.get(key: MyChannelObject.TopLevelMap.LiveMapKeys.nestedEntry)
 }
 
-// TODO create examples with `set()`
-
-// Example that uses the key paths convenience methods for get()
+// Example that uses the key paths convenience methods for get(), set(), remove()
 func keyPathsExampleWithChannel(_ channel: ARTRealtimeChannel) async throws {
     let myChannelPathObject = try await channel.object.get(withShape: MyChannelObject.self)
 
@@ -165,6 +207,12 @@ func keyPathsExampleWithChannel(_ channel: ARTRealtimeChannel) async throws {
     let topLevelMap = myChannelPathObject.get(keyAt: \.topLevelMap)
 
     let nestedEntry = topLevelMap.get(keyAt: \.nestedEntry)
+
+    try await topLevelMap.set(keyAt: \.nestedEntry, value: "Hello")
+    try await topLevelMap.remove(keyAt: \.nestedEntry)
+
+    try await myChannelPathObject.set(keyAt: \.topLevelCounter, value: LiveCounter.create(initialCount: 3))
+    try await topLevelCounter.increment(amount: 4)
 }
 
 
