@@ -121,6 +121,8 @@ public protocol PathObject: PathObjectBase, PathObjectCollectionMethods {
 
     // Note that PathObject does not offer any of the LiveMap or LiveCounter methods. To access those, you must first convert this PathObject to a type-specific PathObject using asLiveMap or asLiveCounter.
 
+    // TODO: For both of these we have to understand how subscriptions work; does it just add a subscription to the underlying PathObject? (I think I need a better understanding of where subscriptions are stored in the path-based API in general; are they actually done at a string path level?)[
+
     /// A proxy for this PathObject, which exposes the LiveMap API. As in JS, LiveMap methods subsequently called on this proxy will fail or return some empty value if the resolved value at this path is not a LiveMap.
     ///
     /// - Note: Accessing this property does not perform any resolution of the value contained at the path.

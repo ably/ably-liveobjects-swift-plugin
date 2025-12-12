@@ -14,6 +14,9 @@ protocol LiveMapShape {
 
     /// An entry that can be passed to `ShapedLiveMap.create()`.
     associatedtype InitialEntry: LiveMapInitialEntry
+
+    /// An entry that can be returned from `ShapedLiveMapPathObject.entries()`.
+    associatedtype PathObjectKnownEntry: LiveMapPathObjectKnownEntry
 }
 
 // TODO this name isn't great, it's not really a key, it's a key description (but I guess a KeyPath is not just a "key path")
@@ -25,6 +28,11 @@ protocol LiveMapKey<Shape, Value>: Sendable {
 protocol LiveMapInitialEntry {
     /// A key-value pair to use when creating the LiveMap.
     var toKeyValuePair: (String, Value) { get }
+}
+
+protocol LiveMapPathObjectKnownEntry {
+    /// Should return `nil` if the key does not correspond to a known entry.
+    init?(key: String, pathObject: PathObject)
 }
 
 struct ShapedLiveMap<Shape: LiveMapShape>: Sendable {
@@ -55,10 +63,25 @@ protocol TypedPrimitivePathObject<Value> {
 
 // TODO: How is Instance going to work? is it actually going to check types? if so will it do it all the way down through nested maps etc?
 
+/// An element of `ShapedLiveMapPathObject.entries`.
+enum ShapedLiveMapPathObjectEntry<Known> {
+    /// A known key-value pair.
+    case known(Known)
+
+    /// An unknown key-value pair; the best we can do is return a String key and an untyped PathObject.
+    case unknown(key: String, value: PathObject)
+}
+
 protocol ShapedLiveMapPathObject<Shape> {
     associatedtype Shape: LiveMapShape
 
-    // TODO: we need keys and entries (what does entries return, and how do they both handle an unknown key?). I think that perhaps `keys` could just return [String], and that the LiveMapShape will need to define a Entry associated type (most likely an enum in practice) that can create itself from a given key and PathObject (or fail to do so in which case we'll have to return some "unknown" type)
+    // This is my proposal for `entries`; I think its return value should be consistent with `keys` and `values`; that is, it should be able to represent things that were found at runtime even when they aren't in the known set of keys.
+    var entries: [ShapedLiveMapPathObjectEntry<Shape.PathObjectKnownEntry>] { get }
+
+    // I think that we'll just keep `keys` and `values` as String and PathObject (same as LiveMapPathObject), given that shapes only matter when considering the relationship between a key and a value
+    var keys: [String] { get }
+    var values: [PathObject] { get }
+
     // TODO: you should still be able to interact with this without shape too — I think the best thing would be to make _this_ type only work with Key but have a way to turn it into a normal LiveMapPathObject
 
     // Variants of `set()`
@@ -241,6 +264,33 @@ func keyPathsExampleWithChannel(_ channel: ARTRealtimeChannel) async throws {
             ]
         )
     )
+
+    for entry in myChannelPathObject.entries {
+        switch entry {
+        case .known(let known):
+            switch known {
+            case .topLevelCounter(let liveCounterPathObject):
+                break
+            case .topLevelMap(let shapedLiveMapPathObject):
+                break
+            }
+        case .unknown(let key, let value):
+            break
+        }
+    }
+
+    for entry in topLevelMap.entries {
+        switch entry {
+        case .known(let known):
+            switch known {
+            case .nestedEntry(let typedPrimitivePathObject):
+                break
+            }
+        case .unknown(let key, let value):
+            break
+        }
+
+    }
 }
 
 
@@ -276,6 +326,17 @@ extension MyChannelObject: LiveMapShape {
             }
         }
     }
+
+    enum PathObjectKnownEntry: LiveMapPathObjectKnownEntry {
+        case topLevelCounter(LiveCounterPathObject)
+        case topLevelMap(any ShapedLiveMapPathObject<TopLevelMap>)
+
+        // TODO: I think that this is going to be another one that's tricky for codegen, again might require us to actually interpret the type because we need to turn a ShapedLiveMap property into a ShapedLiveMapPathObject. Perhaps what we actually want to do here is to let the caller be in charge of creating the object itself, i.e. return some sort of enum result from here instead, but I'm still not sure that fully helps us.
+        // (note that the `get` variants don't have to handle this problem because they perform the conversion via the compiler picking the correct overload; maybe we need to see what we can do along those lines, maybe we can lean on the Key type more again)
+        init?(key: String, pathObject: any PathObject) {
+            fatalError("TODO: Not implemented")
+        }
+    }
 }
 
 extension MyChannelObject.TopLevelMap: LiveMapShape {
@@ -298,6 +359,14 @@ extension MyChannelObject.TopLevelMap: LiveMapShape {
             case .nestedEntry(let string):
                 ("nestedEntry", .primitive(.string(string)))
             }
+        }
+    }
+
+    enum PathObjectKnownEntry: LiveMapPathObjectKnownEntry {
+        case nestedEntry(any TypedPrimitivePathObject<String>)
+
+        init?(key: String, pathObject: any PathObject) {
+            fatalError("TODO: Not implemented")
         }
     }
 }
