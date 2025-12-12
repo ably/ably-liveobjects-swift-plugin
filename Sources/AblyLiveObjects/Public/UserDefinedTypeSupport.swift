@@ -5,12 +5,13 @@ import Ably
 
 // TODO not sure this actually needs to be a protocol
 protocol LiveMapShape {
-    // I'm unsure about this but I think that we want something like it so that we can do implicit member access: `.get(key: .topLevelCounter)`. but again it's not clear what this would inherit from. Also we might need this in order to see whether a key is a known key or not. But we may have to have one of these per Value type? e.g. LiveMapStringKey, LiveMapLiveCounterKey etc (no, that falls apart when you start having parameterisable types e.g. nested maps) — Hmm
-//    associatedtype LiveMapKey
+    // I'm unsure about this but I think that we want something like it so that we can do implicit member access: `.get(key: .topLevelCounter)`. but again it's not clear what this would inherit from. Also we might need this in order to see whether a key is a known key or not. But we may have to have one of these per Value type? e.g. LiveMapStringKey, LiveMapLiveCounterKey etc (no, that falls apart when you start having parameterisable types e.g. nested maps) — Hmm. I think that `entries` might just not be possible because there's no obvious type to define. In that case we _would_ have to do codegen and list all of the possible types. we can still have a LiveMapEntry type here I guess
+
+    // TODO: currently this is _only_ used for the convenience extension that allows key path lookups to make things neater
+    associatedtype LiveMapKeys
 }
 
 // TODO this name isn't great, it's not really a key, it's a key description (but I guess a KeyPath is not just a "key path")
-// This is going to be something described by
 protocol LiveMapKey<Shape, Value>: Sendable {
     associatedtype Shape: LiveMapShape
     associatedtype Value
@@ -36,6 +37,7 @@ protocol ShapedLiveMapPathObject<Shape> {
     // TODO: we need set, entries etc
     // TODO: what do keys and entries return when it's not a known key?
     // TODO: you should still be able to interact with this without shape too
+    // I don't _think_ there is a less verbose way of figuring out the shape of the PathObject
 
     // For entries of each of the primitive types
     func get<Key: LiveMapKey>(key: Key) -> any TypedPrimitivePathObject<String> where Key.Shape == Shape, Key.Value == String
@@ -51,6 +53,42 @@ protocol ShapedLiveMapPathObject<Shape> {
 
     // For LiveCounter entries
     func get<Key: LiveMapKey>(key: Key) -> LiveCounterPathObject where Key.Shape == Shape, Key.Value == LiveCounter
+}
+
+// Convenience extensions for specifying a key by using a key path into a static member of Shape.LiveMapKeys. TODO improve naming: it's a bit confusing because it's a key path _into a set of keys_ (i.e. not into the shape itself). The reason we use key paths instead of implicit member access is because it doesn't require that the "member" actually have that type
+extension ShapedLiveMapPathObject {
+    func get<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> any TypedPrimitivePathObject<String> where Key.Shape == Shape, Key.Value == String {
+        get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
+    }
+
+    func get<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> any TypedPrimitivePathObject<Double> where Key.Shape == Shape, Key.Value == Double {
+        get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
+    }
+
+    func get<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> any TypedPrimitivePathObject<Bool> where Key.Shape == Shape, Key.Value == Bool {
+        get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
+    }
+
+    func get<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> any TypedPrimitivePathObject<Data> where Key.Shape == Shape, Key.Value == Data {
+        get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
+    }
+
+    func get<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> any TypedPrimitivePathObject<[JSONValue]> where Key.Shape == Shape, Key.Value == [JSONValue] {
+        get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
+    }
+
+    func get<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> LiveMapPathObject where Key.Shape == Shape, Key.Value == LiveMap {
+        get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
+
+    }
+
+    func get<Key: LiveMapKey, EntryShape: LiveMapShape>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> any ShapedLiveMapPathObject<EntryShape> where Key.Shape == Shape, Key.Value == ShapedLiveMap<EntryShape> {
+        get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
+    }
+
+    func get<Key: LiveMapKey>(keyAt keyPath: KeyPath<Shape.LiveMapKeys.Type, Key>) -> LiveCounterPathObject where Key.Shape == Shape, Key.Value == LiveCounter {
+        get(key: Shape.LiveMapKeys.self[keyPath: keyPath])
+    }
 }
 
 // MARK: - RealtimeObject `get` implementation for shaped LiveMaps
@@ -77,14 +115,23 @@ func exampleWithChannel(_ channel: ARTRealtimeChannel) async throws {
     // Note that we can't say `.get<MyChannelObject>()` like in TypeScript; gives us "Cannot explicitly specialize instance method 'get()'"
     let myChannelPathObject = try await channel.object.get(withShape: MyChannelObject.self)
 
-    // TODO: this is a bit ugly; implicit member access would be nice but I'm not sure how that works when you might be fetching from one of various types depending on the value?
-    // TODO consider key paths instead of implicit member access
+    // Note that fetching the keys is verbose; see the next example with key paths
     let topLevelCounter = myChannelPathObject.get(key: MyChannelObject.LiveMapKeys.topLevelCounter)
     let topLevelMap = myChannelPathObject.get(key: MyChannelObject.LiveMapKeys.topLevelMap)
 
     let nestedEntry = topLevelMap.get(key: MyChannelObject.TopLevelMap.LiveMapKeys.nestedEntry)
-    let nestedEntryValue = nestedEntry.value
 }
+
+// Example that uses the key paths convenience methods for get()
+func keyPathsExampleWithChannel(_ channel: ARTRealtimeChannel) async throws {
+    let myChannelPathObject = try await channel.object.get(withShape: MyChannelObject.self)
+
+    let topLevelCounter = myChannelPathObject.get(keyAt: \.topLevelCounter)
+    let topLevelMap = myChannelPathObject.get(keyAt: \.topLevelMap)
+
+    let nestedEntry = topLevelMap.get(keyAt: \.nestedEntry)
+}
+
 
 // MARK: - Code that would be generated (for now we're just writing it out)
 
