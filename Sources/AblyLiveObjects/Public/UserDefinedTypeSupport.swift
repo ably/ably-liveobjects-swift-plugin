@@ -3,6 +3,8 @@ import Ably
 
 // MARK: - Public-facing types for shaped LiveMaps
 
+// TODO assess how much LiveMapShape needs to be able to do, and if it's just a convenience, then remove some constraints
+
 // TODO not sure this actually needs to be a protocol
 protocol LiveMapShape {
     // I'm unsure about this but I think that we want something like it so that we can do implicit member access: `.get(key: .topLevelCounter)`. but again it's not clear what this would inherit from. Also we might need this in order to see whether a key is a known key or not. But we may have to have one of these per Value type? e.g. LiveMapStringKey, LiveMapLiveCounterKey etc (no, that falls apart when you start having parameterisable types e.g. nested maps) — Hmm. I think that `entries` might just not be possible because there's no obvious type to define. In that case we _would_ have to do codegen and list all of the possible types. we can still have a LiveMapEntry type here I guess
@@ -135,25 +137,39 @@ func keyPathsExampleWithChannel(_ channel: ARTRealtimeChannel) async throws {
 
 // MARK: - Code that would be generated (for now we're just writing it out)
 
-// These would come from some sort of macro like @LiveMapShape
-extension MyChannelObject: LiveMapShape {}
-extension MyChannelObject.TopLevelMap: LiveMapShape {}
+// These would come from some sort of macro like @LiveMapShape applied to MyChannelObject
 
-extension MyChannelObject {
+extension MyChannelObject: LiveMapShape {
     enum LiveMapKeys {
-        static let topLevelCounter: some LiveMapKey<MyChannelObject, LiveCounter> = DefaultLiveMapKey(rawKey: "topLevelCounter")
-        static let topLevelMap: some LiveMapKey<MyChannelObject, ShapedLiveMap<TopLevelMap>> = DefaultLiveMapKey(rawKey: "topLevelCounter")
+        private struct Key<Value>: LiveMapKey {
+            typealias Shape = MyChannelObject
+
+            /// The underlying key to use for fetching this key from a map's entries
+            var rawKey: String
+        }
+
+        static let topLevelCounter: some LiveMapKey<MyChannelObject, LiveCounter> = Key(rawKey: "topLevelCounter")
+        static let topLevelMap: some LiveMapKey<MyChannelObject, ShapedLiveMap<TopLevelMap>> = Key(rawKey: "topLevelCounter")
     }
 }
 
-extension MyChannelObject.TopLevelMap {
+extension MyChannelObject.TopLevelMap: LiveMapShape {
     enum LiveMapKeys {
-        static let nestedEntry: some LiveMapKey<MyChannelObject.TopLevelMap, String> = DefaultLiveMapKey(rawKey: "nestedEntry")
+        private struct Key<Value>: LiveMapKey {
+            typealias Shape = MyChannelObject.TopLevelMap
+
+            /// The underlying key to use for fetching this key from a map's entries
+            var rawKey: String
+        }
+
+        static let nestedEntry: some LiveMapKey<MyChannelObject.TopLevelMap, String> = Key(rawKey: "nestedEntry")
     }
 }
 
-// Not exactly clear where this would come from (because we don't really want this to be a public type, so the user would have to create it themselves)
+// Note that each `LiveMapKeys` declares their own `Key` type — this is so that we don't have to pollute the library's public types with something that's only used for generated code; i.e. else we'd have to have something like the following:
+
+/*
 struct DefaultLiveMapKey<Shape: LiveMapShape, Value>: LiveMapKey {
-    /// The underlying key to use for fetching this key from a map's entries
     var rawKey: String
 }
+*/
