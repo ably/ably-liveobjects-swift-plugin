@@ -540,15 +540,8 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
 
             receivedObjectSyncProtocolMessagesContinuation.yield(objectMessages)
 
-            // If populated, this contains a full set of sync data for the channel, and should be applied to the ObjectsPool.
-            let completedSyncObjectsPool: [SyncObjectsPoolEntry]?
-            // If populated, this contains a set of buffered inbound OBJECT messages that should be applied.
-            let completedSyncBufferedObjectOperations: [InboundObjectMessage]?
-            // The SyncSequence, if any, to store in the SYNCING state that results from this OBJECT_SYNC.
-            let syncSequenceForSyncingState: SyncSequence?
-
+            let syncCursor: SyncCursor?
             if let protocolMessageChannelSerial {
-                let syncCursor: SyncCursor
                 do {
                     // RTO5a
                     syncCursor = try SyncCursor(channelSerial: protocolMessageChannelSerial)
@@ -556,47 +549,47 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
                     logger.log("Failed to parse sync cursor: \(error)", level: .error)
                     return
                 }
+            } else {
+                syncCursor = nil
+            }
 
+            if case let .syncing(syncingData) = state {
                 // Figure out whether to continue any existing sync sequence or start a new one
-                var updatedSyncSequence: SyncSequence = if case let .syncing(syncingData) = state, let syncSequence = syncingData.syncSequence {
-                    if syncCursor.sequenceID == syncSequence.id {
-                        // RTO5a3: Continue existing sync sequence
-                        syncSequence
-                    } else {
-                        // RTO5a2a, RTO5a2b: new sequence started, discard previous
-                        .init(id: syncCursor.sequenceID, syncObjectsPool: [], bufferedObjectOperations: [])
-                    }
-                } else {
-                    // There's no current sync sequence; start one
-                    .init(id: syncCursor.sequenceID, syncObjectsPool: [], bufferedObjectOperations: [])
+                let isNewSyncSequence = syncCursor == nil || syncingData.syncSequence?.id != syncCursor?.sequenceID
+                if isNewSyncSequence {
+                    // RTO5a2a, RTO5a2b: new sequence started, discard previous. Else we continue the existing sequence per RTO5a3
+                    syncingData.syncSequence = nil
                 }
+            }
 
+            let syncObjectsPoolEntries = objectMessages.compactMap { objectMessage in
+                if let object = objectMessage.object {
+                    SyncObjectsPoolEntry(state: object, objectMessageSerialTimestamp: objectMessage.serialTimestamp)
+                } else {
+                    nil
+                }
+            }
+
+            // If populated, this contains a full set of sync data for the channel, and should be applied to the ObjectsPool.
+            let completedSyncObjectsPool: [SyncObjectsPoolEntry]?
+            // The SyncSequence, if any, to store in the SYNCING state that results from this OBJECT_SYNC.
+            let syncSequenceForSyncingState: SyncSequence?
+
+            if let syncCursor {
+                let syncSequenceToContinue: SyncSequence? = if case let .syncing(syncingData) = state {
+                    syncingData.syncSequence
+                } else {
+                    nil
+                }
+                var updatedSyncSequence = syncSequenceToContinue ?? .init(id: syncCursor.sequenceID, syncObjectsPool: [], bufferedObjectOperations: [])
                 // RTO5b
-                updatedSyncSequence.syncObjectsPool.append(contentsOf: objectMessages.compactMap { objectMessage in
-                    if let object = objectMessage.object {
-                        .init(state: object, objectMessageSerialTimestamp: objectMessage.serialTimestamp)
-                    } else {
-                        nil
-                    }
-                })
-
-                (completedSyncObjectsPool, completedSyncBufferedObjectOperations) = if syncCursor.isEndOfSequence {
-                    (updatedSyncSequence.syncObjectsPool, updatedSyncSequence.bufferedObjectOperations)
-                } else {
-                    (nil, nil)
-                }
-
+                updatedSyncSequence.syncObjectsPool.append(contentsOf: syncObjectsPoolEntries)
                 syncSequenceForSyncingState = updatedSyncSequence
+
+                completedSyncObjectsPool = syncCursor.isEndOfSequence ? updatedSyncSequence.syncObjectsPool : nil
             } else {
                 // RTO5a5: The sync data is contained entirely within this single OBJECT_SYNC
-                completedSyncObjectsPool = objectMessages.compactMap { objectMessage in
-                    if let object = objectMessage.object {
-                        .init(state: object, objectMessageSerialTimestamp: objectMessage.serialTimestamp)
-                    } else {
-                        nil
-                    }
-                }
-                completedSyncBufferedObjectOperations = nil
+                completedSyncObjectsPool = syncObjectsPoolEntries
                 syncSequenceForSyncingState = nil
             }
 
@@ -618,9 +611,13 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
                 )
 
                 // RTO5c6
-                if let completedSyncBufferedObjectOperations, !completedSyncBufferedObjectOperations.isEmpty {
-                    logger.log("Applying \(completedSyncBufferedObjectOperations.count) buffered OBJECT ObjectMessages", level: .debug)
-                    for objectMessage in completedSyncBufferedObjectOperations {
+                guard case let .syncing(syncingData) = state else {
+                    // We put ourselves into SYNCING above
+                    preconditionFailure()
+                }
+                if let bufferedObjectOperations = syncingData.syncSequence?.bufferedObjectOperations, !bufferedObjectOperations.isEmpty {
+                    logger.log("Applying \(bufferedObjectOperations.count) buffered OBJECT ObjectMessages", level: .debug)
+                    for objectMessage in bufferedObjectOperations {
                         nosync_applyObjectProtocolMessageObjectMessage(
                             objectMessage,
                             logger: logger,
