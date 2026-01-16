@@ -293,6 +293,107 @@ struct InternalDefaultLiveMapTests {
             #expect(try map.get(key: "keyFromCreateOp", coreSDK: coreSDK, delegate: delegate)?.stringValue == "valueFromCreateOp")
             #expect(map.testsOnly_createOperationIsMerged)
         }
+
+        /// Tests for RTLM6h (diff calculation on replaceData)
+        struct DiffCalculationTests {
+            // @specOneOf(1/2) RTLM6h - Tests that replaceData returns the diff calculated via RTLM22
+            @Test
+            func returnsCorrectDiffWithoutCreateOp() throws {
+                let logger = TestLogger()
+                let internalQueue = TestFactories.createInternalQueue()
+                let map = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+
+                // Set initial data
+                var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+                internalQueue.ably_syncNoDeadlock {
+                    _ = map.nosync_replaceData(
+                        using: TestFactories.mapObjectState(
+                            objectId: "arbitrary-id",
+                            entries: [
+                                "key1": TestFactories.stringMapEntry(key: "key1", value: "value1").entry,
+                                "key2": TestFactories.stringMapEntry(key: "key2", value: "value2").entry,
+                            ],
+                        ),
+                        objectMessageSerialTimestamp: nil,
+                        objectsPool: &pool,
+                    )
+                }
+
+                // Replace data with modified entries (no createOp)
+                let update = internalQueue.ably_syncNoDeadlock {
+                    map.nosync_replaceData(
+                        using: TestFactories.mapObjectState(
+                            objectId: "arbitrary-id",
+                            entries: [
+                                "key1": TestFactories.stringMapEntry(key: "key1", value: "updatedValue").entry,
+                                "key3": TestFactories.stringMapEntry(key: "key3", value: "value3").entry,
+                            ],
+                        ),
+                        objectMessageSerialTimestamp: nil,
+                        objectsPool: &pool,
+                    )
+                }
+
+                // RTLM6h: Should return diff per RTLM22
+                // key1: updated (changed value), key2: removed, key3: added
+                let updateDict = try #require(update.update).update
+                #expect(updateDict["key1"] == .updated) // value changed
+                #expect(updateDict["key2"] == .removed) // removed
+                #expect(updateDict["key3"] == .updated) // added
+            }
+
+            // @specOneOf(2/2) RTLM6h - Tests that replaceData returns the diff after merging createOp
+            @Test
+            func returnsCorrectDiffWithCreateOp() throws {
+                let logger = TestLogger()
+                let internalQueue = TestFactories.createInternalQueue()
+                let map = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+
+                // Set initial data
+                var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+                internalQueue.ably_syncNoDeadlock {
+                    _ = map.nosync_replaceData(
+                        using: TestFactories.mapObjectState(
+                            objectId: "arbitrary-id",
+                            entries: [
+                                "existing": TestFactories.stringMapEntry(key: "existing", value: "value").entry,
+                            ],
+                        ),
+                        objectMessageSerialTimestamp: nil,
+                        objectsPool: &pool,
+                    )
+                }
+
+                // Replace data with entries and createOp
+                let update = internalQueue.ably_syncNoDeadlock {
+                    map.nosync_replaceData(
+                        using: TestFactories.objectState(
+                            objectId: "arbitrary-id",
+                            createOp: TestFactories.mapCreateOperation(
+                                objectId: "arbitrary-id",
+                                entries: [
+                                    "fromCreateOp": TestFactories.stringMapEntry(key: "fromCreateOp", value: "value").entry,
+                                ],
+                            ),
+                            map: ObjectsMap(
+                                semantics: .known(.lww),
+                                entries: [
+                                    "fromEntries": TestFactories.stringMapEntry(key: "fromEntries", value: "value").entry,
+                                ],
+                            ),
+                        ),
+                        objectMessageSerialTimestamp: nil,
+                        objectsPool: &pool,
+                    )
+                }
+
+                // RTLM6h: Should return diff from previousData to final data (after createOp merge)
+                let updateDict = try #require(update.update).update
+                #expect(updateDict["existing"] == .removed) // removed
+                #expect(updateDict["fromEntries"] == .updated) // added
+                #expect(updateDict["fromCreateOp"] == .updated) // added via createOp
+            }
+        }
     }
 
     /// Tests for the `size`, `entries`, `keys`, and `values` properties, covering RTLM10, RTLM11, RTLM12, and RTLM13 specification points

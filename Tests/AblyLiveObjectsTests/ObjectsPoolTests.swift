@@ -119,8 +119,11 @@ struct ObjectsPoolTests {
             #expect(updatedMap.testsOnly_siteTimeserials == ["site1": "ts1"])
 
             // Check that the update was stored and emitted per RTO5c1a2 and RTO5c7
+            // Per RTLM6h, the update should reflect the diff from previous state (empty) to new state (key1 + createOpKey)
             let subscriberInvocations = await existingMapSubscriber.getInvocations()
-            #expect(subscriberInvocations.map(\.0) == [.init(update: ["createOpKey": .updated])])
+            let emittedUpdate = try #require(subscriberInvocations.first?.0.update)
+            #expect(emittedUpdate["key1"] == .updated)
+            #expect(emittedUpdate["createOpKey"] == .updated)
         }
 
         // @specOneOf(2/2) RTO5c1a1 - Override the internal data for existing counter objects
@@ -157,8 +160,9 @@ struct ObjectsPoolTests {
             #expect(updatedCounter.testsOnly_siteTimeserials == ["site1": "ts1"])
 
             // Check that the update was stored and emitted per RTO5c1a2 and RTO5c7
+            // Per RTLC6h, the update should reflect the diff from previous state (0) to new state (15)
             let subscriberInvocations = await existingCounterSubscriber.getInvocations()
-            #expect(subscriberInvocations.map(\.0) == [.init(amount: 5)]) // From createOp
+            #expect(subscriberInvocations.map(\.0) == [.init(amount: 15)]) // Diff from 0 to 15
         }
 
         // @spec RTO5c1b1a
@@ -367,16 +371,20 @@ struct ObjectsPoolTests {
             #expect(try updatedMap.get(key: "updated", coreSDK: coreSDK, delegate: delegate)?.stringValue == "updated")
 
             // Check update emitted by existing map per RTO5c7
+            // Per RTLM6h, the update should reflect the diff from previous state (empty) to new state (updated + createOpKey)
             let existingMapSubscriberInvocations = await existingMapSubscriber.getInvocations()
-            #expect(existingMapSubscriberInvocations.map(\.0) == [.init(update: ["createOpKey": .updated])])
+            let existingMapUpdate = try #require(existingMapSubscriberInvocations.first?.0.update)
+            #expect(existingMapUpdate["createOpKey"] == .updated)
+            #expect(existingMapUpdate["updated"] == .updated)
 
             let updatedCounter = try #require(pool.entries["counter:existing@1"]?.counterValue)
             // Checking counter value to verify replaceData was called successfully
             #expect(try updatedCounter.value(coreSDK: coreSDK) == 105)
 
             // Check update emitted by existing counter per RTO5c7
+            // Per RTLC6h, the update should reflect the diff from previous state (0) to new state (105)
             let existingCounterInvocations = await existingCounterSubscriber.getInvocations()
-            #expect(existingCounterInvocations.map(\.0) == [.init(amount: 5)])
+            #expect(existingCounterInvocations.map(\.0) == [.init(amount: 105)]) // Diff from 0 to 105
 
             // New objects - verify by checking side effects of replaceData calls
             let newMap = try #require(pool.entries["map:new@1"]?.mapValue)
