@@ -331,6 +331,9 @@ internal final class InternalDefaultLiveCounter: Sendable {
                 return .update(.init(amount: -dataBeforeTombstoning))
             }
 
+            // RTLC6g: Store the current data value as previousData for use in RTLC6h
+            let previousData = data
+
             // RTLC6b: Set the private flag createOperationIsMerged to false
             liveObjectMutableState.createOperationIsMerged = false
 
@@ -338,12 +341,13 @@ internal final class InternalDefaultLiveCounter: Sendable {
             data = state.counter?.count?.doubleValue ?? 0
 
             // RTLC6d: If ObjectState.createOp is present, merge the initial value into the LiveCounter as described in RTLC10
-            return if let createOp = state.createOp {
-                mergeInitialValue(from: createOp)
-            } else {
-                // TODO: I assume this is what to do, clarify in https://github.com/ably/specification/pull/346/files#r2201363446
-                .noop
+            // Discard the LiveCounterUpdate object returned by the merge operation
+            if let createOp = state.createOp {
+                _ = mergeInitialValue(from: createOp)
             }
+
+            // RTLC6h: Calculate the diff between previousData and the current data per RTLC14
+            return ObjectDiffHelpers.calculateCounterDiff(previousData: previousData, newData: data)
         }
 
         /// Merges the initial value from an ObjectOperation into this LiveCounter, per RTLC10.

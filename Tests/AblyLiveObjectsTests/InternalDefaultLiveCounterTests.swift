@@ -149,6 +149,64 @@ struct InternalDefaultLiveCounterTests {
                 #expect(counter.testsOnly_createOperationIsMerged)
             }
         }
+
+        /// Tests for RTLC6h (diff calculation on replaceData)
+        struct DiffCalculationTests {
+            // @specOneOf(1/2) RTLC6h - Tests that replaceData returns the diff calculated via RTLC14
+            @Test
+            func returnsCorrectDiffWithoutCreateOp() throws {
+                let logger = TestLogger()
+                let internalQueue = TestFactories.createInternalQueue()
+                let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+                let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
+
+                // Set initial data to 10
+                internalQueue.ably_syncNoDeadlock {
+                    _ = counter.nosync_replaceData(using: TestFactories.counterObjectState(count: 10), objectMessageSerialTimestamp: nil)
+                }
+                #expect(try counter.value(coreSDK: coreSDK) == 10)
+
+                // Replace data with count 25 (no createOp)
+                let update = internalQueue.ably_syncNoDeadlock {
+                    counter.nosync_replaceData(using: TestFactories.counterObjectState(count: 25), objectMessageSerialTimestamp: nil)
+                }
+
+                // RTLC6h: Should return diff from previousData (10) to newData (25) = 15
+                #expect(try #require(update.update).amount == 15)
+                #expect(try counter.value(coreSDK: coreSDK) == 25)
+            }
+
+            // @specOneOf(2/2) RTLC6h - Tests that replaceData returns the diff after merging createOp
+            @Test
+            func returnsCorrectDiffWithCreateOp() throws {
+                let logger = TestLogger()
+                let internalQueue = TestFactories.createInternalQueue()
+                let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+                let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
+
+                // Set initial data to 10
+                internalQueue.ably_syncNoDeadlock {
+                    _ = counter.nosync_replaceData(using: TestFactories.counterObjectState(count: 10), objectMessageSerialTimestamp: nil)
+                }
+                #expect(try counter.value(coreSDK: coreSDK) == 10)
+
+                // Replace data with count 5 and createOp with count 8
+                // This should set data to 5, then add 8 (mergeInitialValue), resulting in 13
+                let update = internalQueue.ably_syncNoDeadlock {
+                    counter.nosync_replaceData(
+                        using: TestFactories.counterObjectState(
+                            createOp: TestFactories.counterCreateOperation(count: 8),
+                            count: 5,
+                        ),
+                        objectMessageSerialTimestamp: nil,
+                    )
+                }
+
+                // RTLC6h: Should return diff from previousData (10) to newData (13) = 3
+                #expect(try #require(update.update).amount == 3)
+                #expect(try counter.value(coreSDK: coreSDK) == 13)
+            }
+        }
     }
 
     /// Tests for the `mergeInitialValue` method, covering RTLC10 specification points

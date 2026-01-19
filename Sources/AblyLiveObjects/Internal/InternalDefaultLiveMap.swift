@@ -468,6 +468,9 @@ internal final class InternalDefaultLiveMap: Sendable {
                 return .update(.init(update: dataBeforeTombstoning.mapValues { _ in .removed }))
             }
 
+            // RTLM6g: Store the current data value as previousData for use in RTLM6h
+            let previousData = data
+
             // RTLM6b: Set the private flag createOperationIsMerged to false
             liveObjectMutableState.createOperationIsMerged = false
 
@@ -493,8 +496,9 @@ internal final class InternalDefaultLiveMap: Sendable {
             } ?? [:]
 
             // RTLM6d: If ObjectState.createOp is present, merge the initial value into the LiveMap as described in RTLM17
-            return if let createOp = state.createOp {
-                mergeInitialValue(
+            // Discard the LiveMapUpdate object returned by the merge operation
+            if let createOp = state.createOp {
+                _ = mergeInitialValue(
                     from: createOp,
                     objectsPool: &objectsPool,
                     logger: logger,
@@ -502,10 +506,10 @@ internal final class InternalDefaultLiveMap: Sendable {
                     userCallbackQueue: userCallbackQueue,
                     clock: clock,
                 )
-            } else {
-                // TODO: I assume this is what to do, clarify in https://github.com/ably/specification/pull/346/files#r2201363446
-                .noop
             }
+
+            // RTLM6h: Calculate the diff between previousData and the current data per RTLM22
+            return ObjectDiffHelpers.calculateMapDiff(previousData: previousData, newData: data)
         }
 
         /// Merges the initial value from an ObjectOperation into this LiveMap, per RTLM17.
