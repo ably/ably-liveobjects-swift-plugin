@@ -30,12 +30,16 @@ internal struct ObjectsPool {
         }
 
         /// Applies an operation to a LiveObject, per RTO9a2a3.
+        ///
+        /// - Parameters:
+        ///   - skipSiteTimeserialsUpdate: If true, skip updating siteTimeserials (RTO20h for apply-on-ACK).
         internal func nosync_apply(
             _ operation: ObjectOperation,
             objectMessageSerial: String?,
             objectMessageSiteCode: String?,
             objectMessageSerialTimestamp: Date?,
             objectsPool: inout ObjectsPool,
+            skipSiteTimeserialsUpdate: Bool,
         ) {
             switch self {
             case let .map(map):
@@ -45,6 +49,7 @@ internal struct ObjectsPool {
                     objectMessageSiteCode: objectMessageSiteCode,
                     objectMessageSerialTimestamp: objectMessageSerialTimestamp,
                     objectsPool: &objectsPool,
+                    skipSiteTimeserialsUpdate: skipSiteTimeserialsUpdate,
                 )
             case let .counter(counter):
                 counter.nosync_apply(
@@ -53,6 +58,7 @@ internal struct ObjectsPool {
                     objectMessageSiteCode: objectMessageSiteCode,
                     objectMessageSerialTimestamp: objectMessageSerialTimestamp,
                     objectsPool: &objectsPool,
+                    skipSiteTimeserialsUpdate: skipSiteTimeserialsUpdate,
                 )
             }
         }
@@ -144,6 +150,7 @@ internal struct ObjectsPool {
                 map.testsOnly_tombstonedAt
             }
         }
+
     }
 
     /// Keyed by `objectId`.

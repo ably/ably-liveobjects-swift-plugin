@@ -159,7 +159,7 @@ internal final class InternalDefaultLiveMap: Sendable {
         try entries(coreSDK: coreSDK, delegate: delegate).map(\.value)
     }
 
-    internal func set(key: String, value: InternalLiveMapValue, coreSDK: CoreSDK) async throws(ARTErrorInfo) {
+    internal func set(key: String, value: InternalLiveMapValue, coreSDK: CoreSDK, realtimeObjects: InternalDefaultRealtimeObjects) async throws(ARTErrorInfo) {
         let objectMessage = try mutableStateMutex.withSync { mutableState throws(ARTErrorInfo) in
             // RTLM20c
             try coreSDK.nosync_validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "LiveMap.set")
@@ -180,10 +180,11 @@ internal final class InternalDefaultLiveMap: Sendable {
             )
         }
 
-        try await coreSDK.publish(objectMessages: [objectMessage])
+        // RTO20: Publish and apply locally on ACK
+        try await realtimeObjects.publishAndApply(objectMessages: [objectMessage], coreSDK: coreSDK)
     }
 
-    internal func remove(key: String, coreSDK: CoreSDK) async throws(ARTErrorInfo) {
+    internal func remove(key: String, coreSDK: CoreSDK, realtimeObjects: InternalDefaultRealtimeObjects) async throws(ARTErrorInfo) {
         let objectMessage = try mutableStateMutex.withSync { mutableState throws(ARTErrorInfo) in
             // RTLM21c
             try coreSDK.nosync_validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "LiveMap.remove")
@@ -202,8 +203,8 @@ internal final class InternalDefaultLiveMap: Sendable {
             )
         }
 
-        // RTLM21f
-        try await coreSDK.publish(objectMessages: [objectMessage])
+        // RTO20: Publish and apply locally on ACK (RTLM21f)
+        try await realtimeObjects.publishAndApply(objectMessages: [objectMessage], coreSDK: coreSDK)
     }
 
     @discardableResult
@@ -315,12 +316,16 @@ internal final class InternalDefaultLiveMap: Sendable {
     }
 
     /// Attempts to apply an operation from an inbound `ObjectMessage`, per RTLM15.
+    ///
+    /// - Parameters:
+    ///   - skipSiteTimeserialsUpdate: If true, skip updating siteTimeserials (RTO20h for apply-on-ACK).
     internal func nosync_apply(
         _ operation: ObjectOperation,
         objectMessageSerial: String?,
         objectMessageSiteCode: String?,
         objectMessageSerialTimestamp: Date?,
         objectsPool: inout ObjectsPool,
+        skipSiteTimeserialsUpdate: Bool,
     ) {
         mutableStateMutex.withoutSync { mutableState in
             mutableState.apply(
@@ -329,6 +334,7 @@ internal final class InternalDefaultLiveMap: Sendable {
                 objectMessageSiteCode: objectMessageSiteCode,
                 objectMessageSerialTimestamp: objectMessageSerialTimestamp,
                 objectsPool: &objectsPool,
+                skipSiteTimeserialsUpdate: skipSiteTimeserialsUpdate,
                 logger: logger,
                 internalQueue: mutableStateMutex.dispatchQueue,
                 userCallbackQueue: userCallbackQueue,
@@ -574,12 +580,16 @@ internal final class InternalDefaultLiveMap: Sendable {
         }
 
         /// Attempts to apply an operation from an inbound `ObjectMessage`, per RTLM15.
+        ///
+        /// - Parameters:
+        ///   - skipSiteTimeserialsUpdate: If true, skip updating siteTimeserials (RTO20h for apply-on-ACK).
         internal mutating func apply(
             _ operation: ObjectOperation,
             objectMessageSerial: String?,
             objectMessageSiteCode: String?,
             objectMessageSerialTimestamp: Date?,
             objectsPool: inout ObjectsPool,
+            skipSiteTimeserialsUpdate: Bool,
             logger: Logger,
             internalQueue: DispatchQueue,
             userCallbackQueue: DispatchQueue,
@@ -591,8 +601,10 @@ internal final class InternalDefaultLiveMap: Sendable {
                 return
             }
 
-            // RTLM15c
-            liveObjectMutableState.siteTimeserials[applicableOperation.objectMessageSiteCode] = applicableOperation.objectMessageSerial
+            // RTLM15c (RTO20h: skip for apply-on-ACK)
+            if !skipSiteTimeserialsUpdate {
+                liveObjectMutableState.siteTimeserials[applicableOperation.objectMessageSiteCode] = applicableOperation.objectMessageSerial
+            }
 
             // RTLM15e
             // TODO: are we still meant to update siteTimeserials? https://github.com/ably/specification/pull/350/files#r2218718854
@@ -1003,5 +1015,6 @@ internal final class InternalDefaultLiveMap: Sendable {
             // RTLM5d2g: Otherwise, return undefined/null
             return nil
         }
+
     }
 }

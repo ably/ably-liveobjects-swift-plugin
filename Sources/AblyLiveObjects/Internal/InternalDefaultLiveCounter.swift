@@ -103,7 +103,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
         }
     }
 
-    internal func increment(amount: Double, coreSDK: CoreSDK) async throws(ARTErrorInfo) {
+    internal func increment(amount: Double, coreSDK: CoreSDK, realtimeObjects: InternalDefaultRealtimeObjects) async throws(ARTErrorInfo) {
         let objectMessage = try mutableStateMutex.withSync { mutableState throws(ARTErrorInfo) in
             // RTLC12c
             try coreSDK.nosync_validateChannelState(
@@ -130,13 +130,13 @@ internal final class InternalDefaultLiveCounter: Sendable {
             )
         }
 
-        // RTLC12f
-        try await coreSDK.publish(objectMessages: [objectMessage])
+        // RTO20: Publish and apply locally on ACK (RTLC12f)
+        try await realtimeObjects.publishAndApply(objectMessages: [objectMessage], coreSDK: coreSDK)
     }
 
-    internal func decrement(amount: Double, coreSDK: CoreSDK) async throws(ARTErrorInfo) {
+    internal func decrement(amount: Double, coreSDK: CoreSDK, realtimeObjects: InternalDefaultRealtimeObjects) async throws(ARTErrorInfo) {
         // RTLC13b
-        try await increment(amount: -amount, coreSDK: coreSDK)
+        try await increment(amount: -amount, coreSDK: coreSDK, realtimeObjects: realtimeObjects)
     }
 
     @discardableResult
@@ -237,12 +237,16 @@ internal final class InternalDefaultLiveCounter: Sendable {
     }
 
     /// Attempts to apply an operation from an inbound `ObjectMessage`, per RTLC7.
+    ///
+    /// - Parameters:
+    ///   - skipSiteTimeserialsUpdate: If true, skip updating siteTimeserials (RTO20h for apply-on-ACK).
     internal func nosync_apply(
         _ operation: ObjectOperation,
         objectMessageSerial: String?,
         objectMessageSiteCode: String?,
         objectMessageSerialTimestamp: Date?,
         objectsPool: inout ObjectsPool,
+        skipSiteTimeserialsUpdate: Bool,
     ) {
         mutableStateMutex.withoutSync { mutableState in
             mutableState.apply(
@@ -251,6 +255,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
                 objectMessageSiteCode: objectMessageSiteCode,
                 objectMessageSerialTimestamp: objectMessageSerialTimestamp,
                 objectsPool: &objectsPool,
+                skipSiteTimeserialsUpdate: skipSiteTimeserialsUpdate,
                 logger: logger,
                 clock: clock,
                 userCallbackQueue: userCallbackQueue,
@@ -371,12 +376,16 @@ internal final class InternalDefaultLiveCounter: Sendable {
         }
 
         /// Attempts to apply an operation from an inbound `ObjectMessage`, per RTLC7.
+        ///
+        /// - Parameters:
+        ///   - skipSiteTimeserialsUpdate: If true, skip updating siteTimeserials (RTO20h for apply-on-ACK).
         internal mutating func apply(
             _ operation: ObjectOperation,
             objectMessageSerial: String?,
             objectMessageSiteCode: String?,
             objectMessageSerialTimestamp: Date?,
             objectsPool: inout ObjectsPool,
+            skipSiteTimeserialsUpdate: Bool,
             logger: Logger,
             clock: SimpleClock,
             userCallbackQueue: DispatchQueue,
@@ -387,8 +396,10 @@ internal final class InternalDefaultLiveCounter: Sendable {
                 return
             }
 
-            // RTLC7c
-            liveObjectMutableState.siteTimeserials[applicableOperation.objectMessageSiteCode] = applicableOperation.objectMessageSerial
+            // RTLC7c (RTO20h: skip for apply-on-ACK)
+            if !skipSiteTimeserialsUpdate {
+                liveObjectMutableState.siteTimeserials[applicableOperation.objectMessageSiteCode] = applicableOperation.objectMessageSerial
+            }
 
             // RTLC7e
             // TODO: are we still meant to update siteTimeserials? https://github.com/ably/specification/pull/350/files#r2218718854

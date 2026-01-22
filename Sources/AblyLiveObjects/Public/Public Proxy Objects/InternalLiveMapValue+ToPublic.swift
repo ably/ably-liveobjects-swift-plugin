@@ -9,7 +9,9 @@ internal extension InternalLiveMapValue {
         internal var logger: Logger
 
         internal var toCounterCreationArgs: PublicObjectsStore.CounterCreationArgs {
-            .init(coreSDK: coreSDK, logger: logger)
+            // TODO: Figure out how to properly pass realtimeObjects through the object graph
+            // swiftlint:disable:next force_cast
+            .init(coreSDK: coreSDK, logger: logger, realtimeObjects: mapDelegate as! InternalDefaultRealtimeObjects)
         }
 
         internal var toMapCreationArgs: PublicObjectsStore.MapCreationArgs {

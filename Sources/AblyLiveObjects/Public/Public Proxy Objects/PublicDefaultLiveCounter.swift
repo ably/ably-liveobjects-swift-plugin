@@ -11,11 +11,13 @@ internal final class PublicDefaultLiveCounter: LiveCounter {
 
     private let coreSDK: CoreSDK
     private let logger: Logger
+    private let realtimeObjects: InternalDefaultRealtimeObjects
 
-    internal init(proxied: InternalDefaultLiveCounter, coreSDK: CoreSDK, logger: Logger) {
+    internal init(proxied: InternalDefaultLiveCounter, coreSDK: CoreSDK, logger: Logger, realtimeObjects: InternalDefaultRealtimeObjects) {
         self.proxied = proxied
         self.coreSDK = coreSDK
         self.logger = logger
+        self.realtimeObjects = realtimeObjects
     }
 
     // MARK: - `LiveCounter` protocol
@@ -27,11 +29,11 @@ internal final class PublicDefaultLiveCounter: LiveCounter {
     }
 
     internal func increment(amount: Double) async throws(ARTErrorInfo) {
-        try await proxied.increment(amount: amount, coreSDK: coreSDK)
+        try await proxied.increment(amount: amount, coreSDK: coreSDK, realtimeObjects: realtimeObjects)
     }
 
     internal func decrement(amount: Double) async throws(ARTErrorInfo) {
-        try await proxied.decrement(amount: amount, coreSDK: coreSDK)
+        try await proxied.decrement(amount: amount, coreSDK: coreSDK, realtimeObjects: realtimeObjects)
     }
 
     internal func subscribe(listener: @escaping LiveObjectUpdateCallback<LiveCounterUpdate>) throws(ARTErrorInfo) -> any SubscribeResponse {

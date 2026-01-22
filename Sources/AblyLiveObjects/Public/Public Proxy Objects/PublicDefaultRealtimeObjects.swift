@@ -70,6 +70,7 @@ internal final class PublicDefaultRealtimeObjects: RealtimeObjects {
             creationArgs: .init(
                 coreSDK: coreSDK,
                 logger: logger,
+                realtimeObjects: proxied, // RTO20: For apply-on-ACK support
             ),
         )
     }
@@ -82,6 +83,7 @@ internal final class PublicDefaultRealtimeObjects: RealtimeObjects {
             creationArgs: .init(
                 coreSDK: coreSDK,
                 logger: logger,
+                realtimeObjects: proxied, // RTO20: For apply-on-ACK support
             ),
         )
     }
@@ -119,7 +121,7 @@ internal final class PublicDefaultRealtimeObjects: RealtimeObjects {
     /// Replaces the method that this `RealtimeObjects` uses to send any outbound `ObjectMessage`s.
     ///
     /// Used by integration tests, for example to disable `ObjectMessage` publishing so that a test can verify that a behaviour is not a side effect of an `ObjectMessage` sent by the SDK.
-    internal func testsOnly_overridePublish(with newImplementation: @escaping ([OutboundObjectMessage]) async throws(ARTErrorInfo) -> Void) {
+    internal func testsOnly_overridePublish(with newImplementation: @escaping ([OutboundObjectMessage]) async throws(ARTErrorInfo) -> PublishResult) {
         coreSDK.testsOnly_overridePublish(with: newImplementation)
     }
 

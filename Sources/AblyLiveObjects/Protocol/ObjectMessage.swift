@@ -91,6 +91,21 @@ internal struct ObjectState: Equatable {
 }
 
 internal extension InboundObjectMessage {
+    /// Creates a synthetic inbound message from an outbound message, adding the serial and siteCode from the ACK.
+    /// Used for apply-on-ACK (RTO20) where we apply an operation locally before receiving its echo.
+    init(fromOutbound outbound: OutboundObjectMessage, serial: String?, siteCode: String?) {
+        self.id = outbound.id
+        self.clientId = outbound.clientId
+        self.connectionId = outbound.connectionId
+        self.extras = outbound.extras
+        self.timestamp = outbound.timestamp
+        self.operation = outbound.operation
+        self.object = outbound.object
+        self.serial = serial
+        self.siteCode = siteCode
+        self.serialTimestamp = outbound.serialTimestamp
+    }
+
     /// Initializes an `InboundObjectMessage` from an `InboundWireObjectMessage`, applying the data decoding rules of OD5.
     ///
     /// - Parameters:

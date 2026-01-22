@@ -53,6 +53,17 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
         }
     }
 
+    /// Represents ACK information received while sync state is not SYNCED (RTO7c).
+    /// Stores a synthetic InboundObjectMessage created from the outbound message + ACK serial/siteCode.
+    /// Includes a continuation to defer promise resolution per RTO20a/RTO20i.
+    internal struct BufferedAck: Sendable {
+        /// Synthetic InboundObjectMessage created from outbound message + ACK serial/siteCode.
+        let syntheticMessage: InboundObjectMessage
+        /// Continuation to resume when the operation is applied (RTO20i).
+        /// This defers the public API promise resolution until sync completes.
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
     internal var testsOnly_objectsPool: ObjectsPool {
         mutableStateMutex.withSync { mutableState in
             mutableState.objectsPool
@@ -312,6 +323,13 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
         }
     }
 
+    /// Sets the siteCode from ConnectionDetails (CD2j) for use in apply-on-ACK (RTO20c).
+    internal func nosync_setSiteCode(_ siteCode: String) {
+        mutableStateMutex.withoutSync { mutableState in
+            mutableState.siteCode = siteCode
+        }
+    }
+
     internal var testsOnly_receivedObjectProtocolMessages: AsyncStream<[InboundObjectMessage]> {
         receivedObjectProtocolMessages
     }
@@ -369,6 +387,64 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
     // This is currently exposed so that we can try calling it from the tests in the early days of the SDK to check that we can send an OBJECT ProtocolMessage. We'll probably make it private later on.
     internal func testsOnly_publish(objectMessages: [OutboundObjectMessage], coreSDK: CoreSDK) async throws(ARTErrorInfo) {
         try await coreSDK.publish(objectMessages: objectMessages)
+    }
+
+    /// Publishes ObjectMessages and applies them locally on ACK (RTO20).
+    /// Only returns once all operations have been applied to local state.
+    /// This encapsulates all ACK-related bookkeeping so callers don't need to handle it.
+    ///
+    /// Has the same signature as `publish` - accepts multiple ObjectMessages and processes
+    /// them in order, extracting the serial from `res[0].serials` at the correct index for each.
+    internal func publishAndApply(objectMessages: [OutboundObjectMessage], coreSDK: CoreSDK) async throws(ARTErrorInfo) {
+        // Publish and get the result with serials array
+        let publishResult = try await coreSDK.publish(objectMessages: objectMessages)
+
+        // Process each message with its corresponding serial from the result
+        // The serials array corresponds 1:1 to the messages that were published
+        for (index, objectMessage) in objectMessages.enumerated() {
+            // Get the serial for this message (may be nil if discarded due to conflation)
+            let serial: String? = index < publishResult.serials.count ? publishResult.serials[index] : nil
+
+            // Create a synthetic InboundObjectMessage from the outbound message + ACK info.
+            // Validation of serial/siteCode/operation is handled by the existing apply logic (RTLO4a, RTO9a1).
+            let syntheticMessage = mutableStateMutex.withSync { mutableState in
+                InboundObjectMessage(
+                    fromOutbound: objectMessage,
+                    serial: serial,
+                    siteCode: mutableState.siteCode
+                )
+            }
+
+            // RTO20a: If not SYNCED, buffer and wait for sync to complete
+            let shouldWait = mutableStateMutex.withSync { mutableState -> Bool in
+                mutableState.state.toObjectsSyncState != .synced
+            }
+
+            if shouldWait {
+                // Buffer the ACK with a continuation that will be resumed after sync
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    mutableStateMutex.withSync { mutableState in
+                        mutableState.bufferedAcks.append(BufferedAck(
+                            syntheticMessage: syntheticMessage,
+                            continuation: continuation
+                        ))
+                        logger.log("Buffering ACK for serial \(syntheticMessage.serial ?? "nil") - sync not complete (RTO20a)", level: .debug)
+                    }
+                }
+                // When we resume, the operation has been applied by RTO5c10
+            } else {
+                // SYNCED - apply immediately using existing logic (RTO20b-i)
+                mutableStateMutex.withSync { mutableState in
+                    mutableState.nosync_applyAckOperation(
+                        syntheticMessage: syntheticMessage,
+                        logger: logger,
+                        internalQueue: mutableStateMutex.dispatchQueue,
+                        userCallbackQueue: userCallbackQueue,
+                        clock: clock,
+                    )
+                }
+            }
+        }
     }
 
     // MARK: - Garbage collection of deleted objects and map entries
@@ -443,6 +519,17 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
 
         /// The RTO10b grace period for which we will retain tombstoned objects and map entries.
         internal var garbageCollectionGracePeriod: GarbageCollectionOptions.GracePeriod
+
+        /// RTO7b: Serial values of operations applied on ACK but whose echo hasn't been received.
+        /// RTO7b1: Empty on init.
+        internal var appliedOnAckSerials: Set<String> = []
+
+        /// RTO7c: ACK information received while sync state is not SYNCED.
+        /// RTO7c1: Empty on init.
+        internal var bufferedAcks: [BufferedAck] = []
+
+        /// The siteCode from ConnectionDetails (CD2j), used for apply-on-ACK (RTO20c).
+        internal var siteCode: String?
 
         /// The RTO17 sync state. Also stores the sync sequence data.
         internal var state = State.initialized
@@ -627,9 +714,35 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
                             internalQueue: internalQueue,
                             userCallbackQueue: userCallbackQueue,
                             clock: clock,
+                            skipSiteTimeserialsUpdate: false,
                         )
                     }
                 }
+
+                // RTO5c9: Clear appliedOnAckSerials
+                appliedOnAckSerials.removeAll()
+
+                // RTO5c10: Process buffered ACKs
+                let acksToProcess = bufferedAcks
+                if !acksToProcess.isEmpty {
+                    logger.log("Processing \(acksToProcess.count) buffered ACKs after sync completion", level: .debug)
+                    for ack in acksToProcess {
+                        // Apply the operation using existing logic (RTO20b-h)
+                        nosync_applyAckOperation(
+                            syntheticMessage: ack.syntheticMessage,
+                            logger: logger,
+                            internalQueue: internalQueue,
+                            userCallbackQueue: userCallbackQueue,
+                            clock: clock,
+                        )
+
+                        // RTO20i: Resume the continuation to resolve the public API promise
+                        ack.continuation.resume()
+                    }
+                }
+
+                // RTO5c11: Clear bufferedAcks after processing
+                bufferedAcks.removeAll()
 
                 // RTO5c3, RTO5c4, RTO5c5, RTO5c8
                 transition(to: .synced, userCallbackQueue: userCallbackQueue)
@@ -663,19 +776,31 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
                         internalQueue: internalQueue,
                         userCallbackQueue: userCallbackQueue,
                         clock: clock,
+                        skipSiteTimeserialsUpdate: false,
                     )
                 }
             }
         }
 
         /// Implements the `OBJECT` application of RTO9.
+        ///
+        /// - Parameters:
+        ///   - skipSiteTimeserialsUpdate: If true, skip updating siteTimeserials (RTO20h for apply-on-ACK).
         private mutating func nosync_applyObjectProtocolMessageObjectMessage(
             _ objectMessage: InboundObjectMessage,
             logger: Logger,
             internalQueue: DispatchQueue,
             userCallbackQueue: DispatchQueue,
             clock: SimpleClock,
+            skipSiteTimeserialsUpdate: Bool,
         ) {
+            // RTO9a3: Check if already applied on ACK
+            if let serial = objectMessage.serial, appliedOnAckSerials.contains(serial) {
+                appliedOnAckSerials.remove(serial)
+                logger.log("Skipping OBJECT message with serial \(serial) - already applied on ACK (RTO9a3)", level: .debug)
+                return
+            }
+
             guard let operation = objectMessage.operation else {
                 // RTO9a1
                 logger.log("Unsupported OBJECT message received (no operation); \(objectMessage)", level: .warn)
@@ -712,6 +837,7 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
                         objectMessageSiteCode: objectMessage.siteCode,
                         objectMessageSerialTimestamp: objectMessage.serialTimestamp,
                         objectsPool: &objectsPool,
+                        skipSiteTimeserialsUpdate: skipSiteTimeserialsUpdate,
                     )
                 }
             case let .unknown(rawValue):
@@ -781,6 +907,36 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
         internal func emitObjectsEvent(_ event: ObjectsEvent, on queue: DispatchQueue) {
             objectsEventSubscriptionStorage.emit(eventName: event, on: queue)
             internalObjectsEventSubscriptionStorage.emit(eventName: event, on: queue)
+        }
+
+        // MARK: - Apply-on-ACK (RTO20)
+
+        /// Applies an ACK operation immediately (called when SYNCED).
+        /// Also called from RTO5c10 when processing buffered ACKs.
+        /// Uses a synthetic InboundObjectMessage and reuses the existing apply logic.
+        internal mutating func nosync_applyAckOperation(
+            syntheticMessage: InboundObjectMessage,
+            logger: Logger,
+            internalQueue: DispatchQueue,
+            userCallbackQueue: DispatchQueue,
+            clock: SimpleClock,
+        ) {
+            // Reuse existing apply logic with skipSiteTimeserialsUpdate=true (RTO20h)
+            nosync_applyObjectProtocolMessageObjectMessage(
+                syntheticMessage,
+                logger: logger,
+                internalQueue: internalQueue,
+                userCallbackQueue: userCallbackQueue,
+                clock: clock,
+                skipSiteTimeserialsUpdate: true,
+            )
+
+            // RTO20g: Track that we applied this serial on ACK, so the echo gets skipped (RTO9a3)
+            if let serial = syntheticMessage.serial {
+                appliedOnAckSerials.insert(serial)
+            }
+
+            logger.log("Applied operation on ACK with serial \(syntheticMessage.serial ?? "nil") (RTO20)", level: .debug)
         }
     }
 }

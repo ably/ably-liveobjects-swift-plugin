@@ -148,6 +148,13 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
 
         // RTO10b
         nosync_realtimeObjects(for: channel).nosync_setGarbageCollectionGracePeriod(gracePeriod)
+
+        // CD2j: Store siteCode for apply-on-ACK (RTO20c)
+        // TODO: Uncomment once siteCode is added to ConnectionDetailsProtocol in ably-cocoa-plugin-support
+        // and parsed from connectionDetails in ably-cocoa.
+        // if let siteCode = connectionDetails?.siteCode {
+        //     nosync_realtimeObjects(for: channel).nosync_setSiteCode(siteCode)
+        // }
     }
 
     // MARK: - Sending `OBJECT` ProtocolMessage
@@ -157,13 +164,18 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
         channel: _AblyPluginSupportPrivate.RealtimeChannel,
         client: _AblyPluginSupportPrivate.RealtimeClient,
         pluginAPI: PluginAPIProtocol,
-    ) async throws(ARTErrorInfo) {
+    ) async throws(ARTErrorInfo) -> PublishResult {
         let objectMessageBoxes: [ObjectMessageBox<OutboundObjectMessage>] = objectMessages.map { .init(objectMessage: $0) }
 
-        try await withCheckedContinuation { (continuation: CheckedContinuation<Result<Void, ARTErrorInfo>, _>) in
+        return try await withCheckedContinuation { (continuation: CheckedContinuation<Result<PublishResult, ARTErrorInfo>, _>) in
             let internalQueue = pluginAPI.internalQueue(for: client)
 
             internalQueue.async {
+                // RTO20b: The callback should include `serials` from the ACK `res[0].serials` property.
+                // TODO: Update ably-cocoa to pass the serials in the callback per the spec prereqs:
+                // - APPluginAPI.h: Change nosync_sendObject completion handler to include serials array
+                // - ARTPluginAPI.m: Parse serials from ACK res[0].serials and pass to callback
+                // Until those changes are made, serials will be an array of nils.
                 pluginAPI.nosync_sendObject(
                     withObjectMessages: objectMessageBoxes,
                     channel: channel,
@@ -174,7 +186,10 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
                     if let error {
                         continuation.resume(returning: .failure(ARTErrorInfo.castPluginPublicErrorInfo(error)))
                     } else {
-                        continuation.resume(returning: .success(()))
+                        // TODO: Extract serials from callback once ably-cocoa is updated
+                        // For now, return an array of nils with the same count as messages sent
+                        let serials: [String?] = Array(repeating: nil, count: objectMessageBoxes.count)
+                        continuation.resume(returning: .success(PublishResult(serials: serials)))
                     }
                 }
             }

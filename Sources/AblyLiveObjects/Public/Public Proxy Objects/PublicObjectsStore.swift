@@ -34,6 +34,7 @@ internal final class PublicObjectsStore: Sendable {
     internal struct CounterCreationArgs {
         internal var coreSDK: CoreSDK
         internal var logger: Logger
+        internal var realtimeObjects: InternalDefaultRealtimeObjects
     }
 
     /// Fetches the cached `PublicDefaultLiveCounter` that wraps a given `InternalDefaultLiveCounter`, creating a new public object if there isn't already one.
@@ -133,6 +134,7 @@ internal final class PublicObjectsStore: Sendable {
                     proxied: proxied,
                     coreSDK: creationArgs.coreSDK,
                     logger: creationArgs.logger,
+                    realtimeObjects: creationArgs.realtimeObjects,
                 )
             }
         }
