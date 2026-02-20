@@ -2823,7 +2823,7 @@ private struct ObjectsIntegrationTests {
 
                         // prevent publishing of ops to realtime so we guarantee that the initial value doesn't come from a CREATE op
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in })
+                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in PublishResult(serials: []) })
 
                         let counter = try await objects.createCounter(count: 1)
                         #expect(try counter.value == 1, "Check counter has expected initial value")
@@ -2858,6 +2858,7 @@ private struct ObjectsIntegrationTests {
                             } catch {
                                 throw LiveObjectsError.other(error).toARTErrorInfo()
                             }
+                            return PublishResult(serials: [])
                         })
 
                         let counter = try await objects.createCounter(count: 1)
@@ -2880,6 +2881,7 @@ private struct ObjectsIntegrationTests {
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
                         internallyTypedObjects.testsOnly_overridePublish(with: { _ in
                             // Do nothing - prevent publishing
+                            return PublishResult(serials: [])
                         })
 
                         // Create counter locally, should have an initial value set
@@ -3068,7 +3070,7 @@ private struct ObjectsIntegrationTests {
                         let objects = ctx.objects
 
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in })
+                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in PublishResult(serials: []) })
 
                         // prevent publishing of ops to realtime so we guarantee that the initial value doesn't come from a CREATE op
                         let map = try await objects.createMap(entries: ["foo": "bar"])
@@ -3114,6 +3116,7 @@ private struct ObjectsIntegrationTests {
                             } catch {
                                 throw LiveObjectsError.other(error).toARTErrorInfo()
                             }
+                            return PublishResult(serials: [])
                         })
 
                         let map = try await objects.createMap(entries: ["foo": "bar"])
@@ -3137,6 +3140,7 @@ private struct ObjectsIntegrationTests {
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
                         internallyTypedObjects.testsOnly_overridePublish(with: { _ in
                             // Do nothing - prevent publishing
+                            return PublishResult(serials: [])
                         })
 
                         // Create map locally, should have an initial value set
@@ -3751,7 +3755,7 @@ private struct ObjectsIntegrationTests {
             let testProxyTransport = try #require(client.internal.transport as? TestProxyTransport)
             let connectedProtocolMessage = ARTProtocolMessage()
             connectedProtocolMessage.action = .connected
-            connectedProtocolMessage.connectionDetails = .init(clientId: nil, connectionKey: nil, maxMessageSize: 10, maxFrameSize: 10, maxInboundRate: 10, connectionStateTtl: 10, serverId: "", maxIdleInterval: 10, objectsGCGracePeriod: 0.999) // all arbitrary except objectsGCGracePeriod
+            connectedProtocolMessage.connectionDetails = .init(clientId: nil, connectionKey: nil, maxMessageSize: 10, maxFrameSize: 10, maxInboundRate: 10, connectionStateTtl: 10, serverId: "", maxIdleInterval: 10, objectsGCGracePeriod: 0.999, siteCode: nil) // all arbitrary except objectsGCGracePeriod
             client.internal.queue.ably_syncNoDeadlock {
                 testProxyTransport.receive(connectedProtocolMessage)
             }
@@ -3779,7 +3783,7 @@ private struct ObjectsIntegrationTests {
             let testProxyTransport = try #require(client.internal.transport as? TestProxyTransport)
             let connectedProtocolMessage = ARTProtocolMessage()
             connectedProtocolMessage.action = .connected
-            connectedProtocolMessage.connectionDetails = .init(clientId: nil, connectionKey: nil, maxMessageSize: 10, maxFrameSize: 10, maxInboundRate: 10, connectionStateTtl: 10, serverId: "", maxIdleInterval: 10, objectsGCGracePeriod: nil) // all arbitrary except objectsGCGracePeriod
+            connectedProtocolMessage.connectionDetails = .init(clientId: nil, connectionKey: nil, maxMessageSize: 10, maxFrameSize: 10, maxInboundRate: 10, connectionStateTtl: 10, serverId: "", maxIdleInterval: 10, objectsGCGracePeriod: nil, siteCode: nil) // all arbitrary except objectsGCGracePeriod
             client.internal.queue.ably_syncNoDeadlock {
                 testProxyTransport.receive(connectedProtocolMessage)
             }

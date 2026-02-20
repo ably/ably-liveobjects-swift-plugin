@@ -1228,6 +1228,7 @@ struct InternalDefaultLiveMapTests {
                     objectMessageSiteCode: "site1",
                     objectMessageSerialTimestamp: nil,
                     objectsPool: &pool,
+                    source: .channel,
                 )
             }
 
@@ -1266,6 +1267,7 @@ struct InternalDefaultLiveMapTests {
                     objectMessageSiteCode: "site1",
                     objectMessageSerialTimestamp: nil,
                     objectsPool: &pool,
+                    source: .channel,
                 )
             }
 
@@ -1323,6 +1325,7 @@ struct InternalDefaultLiveMapTests {
                     objectMessageSiteCode: "site1",
                     objectMessageSerialTimestamp: nil,
                     objectsPool: &pool,
+                    source: .channel,
                 )
             }
 
@@ -1379,6 +1382,7 @@ struct InternalDefaultLiveMapTests {
                     objectMessageSiteCode: "site1",
                     objectMessageSerialTimestamp: nil,
                     objectsPool: &pool,
+                    source: .channel,
                 )
             }
 
@@ -1413,6 +1417,7 @@ struct InternalDefaultLiveMapTests {
                     objectMessageSiteCode: "site1",
                     objectMessageSerialTimestamp: nil,
                     objectsPool: &pool,
+                    source: .channel,
                 )
             }
 
@@ -1429,11 +1434,13 @@ struct InternalDefaultLiveMapTests {
         func throwsErrorForInvalidChannelState(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let map = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let clock = MockSimpleClock()
+            let map = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: channelState, internalQueue: internalQueue)
+            let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             await #expect {
-                try await map.set(key: "test", value: .string("value"), coreSDK: coreSDK)
+                try await map.set(key: "test", value: .string("value"), coreSDK: coreSDK, realtimeObjects: realtimeObjects)
             } throws: { error in
                 guard let errorInfo = error as? ARTErrorInfo else {
                     return false
@@ -1474,15 +1481,18 @@ struct InternalDefaultLiveMapTests {
         func publishesCorrectObjectMessageForDifferentValueTypes(value: @escaping @Sendable (DispatchQueue) -> InternalLiveMapValue, expectedData: ObjectData) async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let map = InternalDefaultLiveMap.createZeroValued(objectID: "map:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let clock = MockSimpleClock()
+            let map = InternalDefaultLiveMap.createZeroValued(objectID: "map:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
+            let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             var publishedMessage: OutboundObjectMessage?
             coreSDK.setPublishHandler { messages in
                 publishedMessage = messages.first
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
-            try await map.set(key: "testKey", value: value(internalQueue), coreSDK: coreSDK)
+            try await map.set(key: "testKey", value: value(internalQueue), coreSDK: coreSDK, realtimeObjects: realtimeObjects)
 
             let expectedMessage = OutboundObjectMessage(
                 operation: ObjectOperation(
@@ -1507,15 +1517,17 @@ struct InternalDefaultLiveMapTests {
         func throwsErrorWhenPublishFails() async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let map = InternalDefaultLiveMap.createZeroValued(objectID: "map:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let clock = MockSimpleClock()
+            let map = InternalDefaultLiveMap.createZeroValued(objectID: "map:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
+            let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             coreSDK.setPublishHandler { _ throws(ARTErrorInfo) in
                 throw LiveObjectsError.other(NSError(domain: "test", code: 0, userInfo: [NSLocalizedDescriptionKey: "Publish failed"])).toARTErrorInfo()
             }
 
             await #expect {
-                try await map.set(key: "testKey", value: .string("testValue"), coreSDK: coreSDK)
+                try await map.set(key: "testKey", value: .string("testValue"), coreSDK: coreSDK, realtimeObjects: realtimeObjects)
             } throws: { error in
                 guard let errorInfo = error as? ARTErrorInfo else {
                     return false
@@ -1532,11 +1544,13 @@ struct InternalDefaultLiveMapTests {
         func throwsErrorForInvalidChannelState(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let map = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let clock = MockSimpleClock()
+            let map = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: channelState, internalQueue: internalQueue)
+            let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             await #expect {
-                try await map.remove(key: "test", coreSDK: coreSDK)
+                try await map.remove(key: "test", coreSDK: coreSDK, realtimeObjects: realtimeObjects)
             } throws: { error in
                 guard let errorInfo = error as? ARTErrorInfo else {
                     return false
@@ -1556,15 +1570,18 @@ struct InternalDefaultLiveMapTests {
         func publishesCorrectObjectMessage() async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let map = InternalDefaultLiveMap.createZeroValued(objectID: "map:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let clock = MockSimpleClock()
+            let map = InternalDefaultLiveMap.createZeroValued(objectID: "map:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
+            let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
-            try await map.remove(key: "testKey", coreSDK: coreSDK)
+            try await map.remove(key: "testKey", coreSDK: coreSDK, realtimeObjects: realtimeObjects)
 
             let expectedMessage = OutboundObjectMessage(
                 operation: ObjectOperation(
@@ -1588,15 +1605,17 @@ struct InternalDefaultLiveMapTests {
         func throwsErrorWhenPublishFails() async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let map = InternalDefaultLiveMap.createZeroValued(objectID: "map:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let clock = MockSimpleClock()
+            let map = InternalDefaultLiveMap.createZeroValued(objectID: "map:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
+            let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             coreSDK.setPublishHandler { _ throws(ARTErrorInfo) in
                 throw LiveObjectsError.other(NSError(domain: "test", code: 0, userInfo: [NSLocalizedDescriptionKey: "Publish failed"])).toARTErrorInfo()
             }
 
             await #expect {
-                try await map.remove(key: "testKey", coreSDK: coreSDK)
+                try await map.remove(key: "testKey", coreSDK: coreSDK, realtimeObjects: realtimeObjects)
             } throws: { error in
                 guard let errorInfo = error as? ARTErrorInfo else {
                     return false

@@ -1216,6 +1216,7 @@ struct InternalDefaultRealtimeObjectsTests {
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
             // Call createMap
@@ -1257,6 +1258,7 @@ struct InternalDefaultRealtimeObjectsTests {
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
             // Call createMap with no entries
@@ -1297,6 +1299,7 @@ struct InternalDefaultRealtimeObjectsTests {
                     // This simulates the object already existing when createMap tries to get it, before the publish operation completes (e.g. because it has been populated by receipt of an OBJECT)
                     maybeExistingObject = realtimeObjects.testsOnly_createZeroValueLiveObject(forObjectID: objectID)?.mapValue
                 }
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
             // Call createMap - the publishHandler will create the object with the generated ID
@@ -1350,6 +1353,7 @@ struct InternalDefaultRealtimeObjectsTests {
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
             // Call createCounter
@@ -1384,6 +1388,7 @@ struct InternalDefaultRealtimeObjectsTests {
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
             // Call createCounter with no count
@@ -1425,6 +1430,7 @@ struct InternalDefaultRealtimeObjectsTests {
                     // This simulates the object already existing when createMap tries to get it, before the publish operation completes (e.g. because it has been populated by receipt of an OBJECT)
                     maybeExistingObject = realtimeObjects.testsOnly_createZeroValueLiveObject(forObjectID: objectID)?.counterValue
                 }
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
             // Call createCounter - the publishHandler will create the object with the generated ID

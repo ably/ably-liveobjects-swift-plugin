@@ -33,6 +33,7 @@ internal final class PublicObjectsStore: Sendable {
 
     internal struct CounterCreationArgs {
         internal var coreSDK: CoreSDK
+        internal var realtimeObjects: InternalDefaultRealtimeObjects
         internal var logger: Logger
     }
 
@@ -46,6 +47,7 @@ internal final class PublicObjectsStore: Sendable {
     internal struct MapCreationArgs {
         internal var coreSDK: CoreSDK
         internal var delegate: LiveMapObjectsPoolDelegate
+        internal var realtimeObjects: InternalDefaultRealtimeObjects
         internal var logger: Logger
     }
 
@@ -132,6 +134,7 @@ internal final class PublicObjectsStore: Sendable {
                 .init(
                     proxied: proxied,
                     coreSDK: creationArgs.coreSDK,
+                    realtimeObjects: creationArgs.realtimeObjects,
                     logger: creationArgs.logger,
                 )
             }
@@ -150,6 +153,7 @@ internal final class PublicObjectsStore: Sendable {
                     proxied: proxied,
                     coreSDK: creationArgs.coreSDK,
                     delegate: creationArgs.delegate,
+                    realtimeObjects: creationArgs.realtimeObjects,
                     logger: creationArgs.logger,
                 )
             }

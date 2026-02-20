@@ -180,4 +180,72 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
             }
         }.get()
     }
+
+    /// Sends object messages and returns the `PublishResult` from the ACK (RTO15h).
+    ///
+    /// This calls the new optional `nosync_sendObjectWithObjectMessages:channel:completionWithResult:` method
+    /// on `PluginAPIProtocol`. If the method is not implemented (ably-cocoa too old), this will `fatalError`.
+    internal static func sendObjectWithResult(
+        objectMessages: [OutboundObjectMessage],
+        channel: _AblyPluginSupportPrivate.RealtimeChannel,
+        client: _AblyPluginSupportPrivate.RealtimeClient,
+        pluginAPI: PluginAPIProtocol,
+    ) async throws(ARTErrorInfo) -> PublishResult {
+        let objectMessageBoxes: [ObjectMessageBox<OutboundObjectMessage>] = objectMessages.map { .init(objectMessage: $0) }
+
+        // Check that the new optional method is available
+        let selector = NSSelectorFromString("nosync_sendObjectWithObjectMessages:channel:completionWithResult:")
+        guard (pluginAPI as AnyObject).responds(to: selector) else {
+            fatalError("ably-cocoa does not implement nosync_sendObjectWithObjectMessages:channel:completionWithResult:. Please update ably-cocoa to a version that supports apply-on-ACK.")
+        }
+
+        return try await withCheckedContinuation { (continuation: CheckedContinuation<Result<PublishResult, ARTErrorInfo>, _>) in
+            let internalQueue = pluginAPI.internalQueue(for: client)
+
+            internalQueue.async {
+                pluginAPI.nosync_sendObject?(
+                    withObjectMessages: objectMessageBoxes,
+                    channel: channel,
+                    completionWithResult: { error, publishResultProtocol in
+                        dispatchPrecondition(condition: .onQueue(internalQueue))
+
+                        if let error {
+                            continuation.resume(returning: .failure(ARTErrorInfo.castPluginPublicErrorInfo(error)))
+                        } else {
+                            let serials: [String?]
+                            if let publishResultProtocol {
+                                serials = publishResultProtocol.serials.map { serial in
+                                    serial.value
+                                }
+                            } else {
+                                serials = []
+                            }
+                            continuation.resume(returning: .success(PublishResult(serials: serials)))
+                        }
+                    }
+                )
+            }
+        }.get()
+    }
+
+    // MARK: - Connection Details
+
+    /// Returns the `siteCode` from the latest `connectionDetails`, or nil if unavailable.
+    internal static func siteCode(
+        client: _AblyPluginSupportPrivate.RealtimeClient,
+        pluginAPI: PluginAPIProtocol,
+    ) -> String? {
+        guard let connectionDetails = pluginAPI.nosync_latestConnectionDetails(for: client) else {
+            return nil
+        }
+
+        // siteCode is @optional on the protocol; use responds(to:) to distinguish
+        // "not implemented" from "returns nil"
+        let selector = NSSelectorFromString("siteCode")
+        guard (connectionDetails as AnyObject).responds(to: selector) else {
+            fatalError("ably-cocoa's connectionDetails does not implement siteCode. Please update ably-cocoa to a version that supports apply-on-ACK.")
+        }
+
+        return connectionDetails.siteCode?()
+    }
 }

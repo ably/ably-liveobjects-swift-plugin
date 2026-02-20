@@ -415,6 +415,7 @@ struct InternalDefaultLiveCounterTests {
                     objectMessageSiteCode: "site1",
                     objectMessageSerialTimestamp: nil,
                     objectsPool: &pool,
+                    source: .channel,
                 )
             }
 
@@ -450,6 +451,7 @@ struct InternalDefaultLiveCounterTests {
                     objectMessageSiteCode: "site1",
                     objectMessageSerialTimestamp: nil,
                     objectsPool: &pool,
+                    source: .channel,
                 )
             }
 
@@ -498,6 +500,7 @@ struct InternalDefaultLiveCounterTests {
                     objectMessageSiteCode: "site1",
                     objectMessageSerialTimestamp: nil,
                     objectsPool: &pool,
+                    source: .channel,
                 )
             }
 
@@ -532,6 +535,7 @@ struct InternalDefaultLiveCounterTests {
                     objectMessageSiteCode: "site1",
                     objectMessageSerialTimestamp: nil,
                     objectsPool: &pool,
+                    source: .channel,
                 )
             }
 
@@ -548,11 +552,13 @@ struct InternalDefaultLiveCounterTests {
         func throwsErrorForInvalidChannelState(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let clock = MockSimpleClock()
+            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: channelState, internalQueue: internalQueue)
+            let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             await #expect {
-                try await counter.increment(amount: 10, coreSDK: coreSDK)
+                try await counter.increment(amount: 10, coreSDK: coreSDK, realtimeObjects: realtimeObjects)
             } throws: { error in
                 guard let errorInfo = error as? ARTErrorInfo else {
                     return false
@@ -571,11 +577,13 @@ struct InternalDefaultLiveCounterTests {
         func throwsErrorForInvalidAmount(amount: Double) async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let clock = MockSimpleClock()
+            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
+            let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             await #expect {
-                try await counter.increment(amount: amount, coreSDK: coreSDK)
+                try await counter.increment(amount: amount, coreSDK: coreSDK, realtimeObjects: realtimeObjects)
             } throws: { error in
                 guard let errorInfo = error as? ARTErrorInfo else {
                     return false
@@ -593,15 +601,18 @@ struct InternalDefaultLiveCounterTests {
         func publishesCorrectObjectMessage() async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "counter:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let clock = MockSimpleClock()
+            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "counter:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
+            let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
-            try await counter.increment(amount: 10.5, coreSDK: coreSDK)
+            try await counter.increment(amount: 10.5, coreSDK: coreSDK, realtimeObjects: realtimeObjects)
 
             let expectedMessage = OutboundObjectMessage(
                 operation: ObjectOperation(
@@ -622,15 +633,17 @@ struct InternalDefaultLiveCounterTests {
         func throwsErrorWhenPublishFails() async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "counter:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let clock = MockSimpleClock()
+            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "counter:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
+            let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             coreSDK.setPublishHandler { _ throws(ARTErrorInfo) in
                 throw LiveObjectsError.other(NSError(domain: "test", code: 0, userInfo: [NSLocalizedDescriptionKey: "Publish failed"])).toARTErrorInfo()
             }
 
             await #expect {
-                try await counter.increment(amount: 10, coreSDK: coreSDK)
+                try await counter.increment(amount: 10, coreSDK: coreSDK, realtimeObjects: realtimeObjects)
             } throws: { error in
                 guard let errorInfo = error as? ARTErrorInfo else {
                     return false
@@ -646,16 +659,20 @@ struct InternalDefaultLiveCounterTests {
         @Test
         func isOppositeOfIncrement() async throws {
             // This is just a smoke test; we assume that this just calls `increment`, which is tested elsewhere.
+            let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "counter:test@123", logger: TestLogger(), internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let clock = MockSimpleClock()
+            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "counter:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
+            let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
-            try await counter.decrement(amount: 10.5, coreSDK: coreSDK)
+            try await counter.decrement(amount: 10.5, coreSDK: coreSDK, realtimeObjects: realtimeObjects)
 
             // RTLC12f
             #expect(publishedMessages.count == 1)
