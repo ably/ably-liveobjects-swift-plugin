@@ -4,114 +4,141 @@ import Foundation
 
 /// An implementation of ``InternalEventEmitter``.
 /// Conforms to the RTE specification for EventEmitter behavior.
-@MainActor
-internal class DefaultInternalEventEmitter<Event: Hashable, Data>: InternalEventEmitter {
-    // Storage for listener registrations
-    private var allEventListeners: [ListenerRegistration<MainActorEventListener<Event, Data>>] = []
-    private var namedEventListeners: [Event: [ListenerRegistration<MainActorNamedEventListener<Data>>]] = [:]
+internal final class DefaultInternalEventEmitter<Event: Hashable & Sendable, Data: Sendable>: InternalEventEmitter, Sendable {
+    private let mutableStateMutex: DispatchQueueMutex<MutableState>
+
+    internal init(internalQueue: DispatchQueue) {
+        mutableStateMutex = .init(dispatchQueue: internalQueue, initialValue: .init())
+    }
+
+    // MARK: - MutableState
+
+    private struct MutableState {
+        var allEventListeners: [ListenerRegistration<EventListener<Event, Data>>] = []
+        var namedEventListeners: [Event: [ListenerRegistration<NamedEventListener<Data>>]] = [:]
+    }
 
     // MARK: - EventEmitter conformance
 
     /// RTE3: Registers listener for all events
-    internal func on(_ listener: @escaping MainActorEventListener<Event, Data>) {
+    internal func nosync_on(_ listener: @escaping EventListener<Event, Data>) {
         let registration = ListenerRegistration(listener: listener, once: false)
-        allEventListeners.append(registration)
+        mutableStateMutex.withoutSync { state in
+            state.allEventListeners.append(registration)
+        }
     }
 
     /// RTE3: Registers listener for all events with signal
-    internal func on(signalledBy signal: SubscriptionController.Signal, _ listener: @escaping MainActorEventListener<Event, Data>) {
+    internal func nosync_on(signalledBy signal: SubscriptionController.Signal, _ listener: @escaping EventListener<Event, Data>) {
         let registration = ListenerRegistration(listener: listener, once: false)
-        allEventListeners.append(registration)
+        mutableStateMutex.withoutSync { state in
+            state.allEventListeners.append(registration)
+        }
 
-        // Register this registration with the controller so it can remove it when off() is called
-        signal.controller?.addRegistration(self, registrationId: registration.id)
+        // Register this registration with the signal so the controller can remove it when nosync_off() is called
+        signal.nosync_addRegistration(self, registrationId: registration.id)
     }
 
     /// RTE3: Registers listener for specific event
-    internal func on(_ event: Event, _ listener: @escaping MainActorNamedEventListener<Data>) {
+    internal func nosync_on(_ event: Event, _ listener: @escaping NamedEventListener<Data>) {
         let registration = ListenerRegistration(listener: listener, once: false)
-        namedEventListeners[event, default: []].append(registration)
+        mutableStateMutex.withoutSync { state in
+            state.namedEventListeners[event, default: []].append(registration)
+        }
     }
 
     /// RTE3: Registers listener for specific event with signal
-    internal func on(_ event: Event, signalledBy signal: SubscriptionController.Signal, _ listener: @escaping MainActorNamedEventListener<Data>) {
+    internal func nosync_on(_ event: Event, signalledBy signal: SubscriptionController.Signal, _ listener: @escaping NamedEventListener<Data>) {
         let registration = ListenerRegistration(listener: listener, once: false)
-        namedEventListeners[event, default: []].append(registration)
+        mutableStateMutex.withoutSync { state in
+            state.namedEventListeners[event, default: []].append(registration)
+        }
 
-        // Register this registration with the controller
-        signal.controller?.addRegistration(self, registrationId: registration.id)
+        // Register this registration with the signal so the controller can remove it when nosync_off() is called
+        signal.nosync_addRegistration(self, registrationId: registration.id)
     }
 
     /// RTE4: Registers one-time listener for all events
-    internal func once(_ listener: @escaping MainActorEventListener<Event, Data>) {
+    internal func nosync_once(_ listener: @escaping EventListener<Event, Data>) {
         let registration = ListenerRegistration(listener: listener, once: true)
-        allEventListeners.append(registration)
+        mutableStateMutex.withoutSync { state in
+            state.allEventListeners.append(registration)
+        }
     }
 
     /// RTE4: Registers one-time listener for all events with signal
-    internal func once(signalledBy signal: SubscriptionController.Signal, _ listener: @escaping MainActorEventListener<Event, Data>) {
+    internal func nosync_once(signalledBy signal: SubscriptionController.Signal, _ listener: @escaping EventListener<Event, Data>) {
         let registration = ListenerRegistration(listener: listener, once: true)
-        allEventListeners.append(registration)
+        mutableStateMutex.withoutSync { state in
+            state.allEventListeners.append(registration)
+        }
 
-        // Register this registration with the controller
-        signal.controller?.addRegistration(self, registrationId: registration.id)
+        // Register this registration with the signal so the controller can remove it when nosync_off() is called
+        signal.nosync_addRegistration(self, registrationId: registration.id)
     }
 
     /// RTE4: Registers one-time listener for specific event
-    internal func once(_ event: Event, _ listener: @escaping MainActorNamedEventListener<Data>) {
+    internal func nosync_once(_ event: Event, _ listener: @escaping NamedEventListener<Data>) {
         let registration = ListenerRegistration(listener: listener, once: true)
-        namedEventListeners[event, default: []].append(registration)
+        mutableStateMutex.withoutSync { state in
+            state.namedEventListeners[event, default: []].append(registration)
+        }
     }
 
     /// RTE4: Registers one-time listener for specific event with signal
-    internal func once(_ event: Event, signalledBy signal: SubscriptionController.Signal, _ listener: @escaping MainActorNamedEventListener<Data>) {
+    internal func nosync_once(_ event: Event, signalledBy signal: SubscriptionController.Signal, _ listener: @escaping NamedEventListener<Data>) {
         let registration = ListenerRegistration(listener: listener, once: true)
-        namedEventListeners[event, default: []].append(registration)
+        mutableStateMutex.withoutSync { state in
+            state.namedEventListeners[event, default: []].append(registration)
+        }
 
-        // Register this registration with the controller
-        signal.controller?.addRegistration(self, registrationId: registration.id)
+        // Register this registration with the signal so the controller can remove it when nosync_off() is called
+        signal.nosync_addRegistration(self, registrationId: registration.id)
     }
 
     /// RTE5: Removes all listeners
-    internal func off() {
-        allEventListeners.removeAll()
-        namedEventListeners.removeAll()
+    internal func nosync_off() {
+        mutableStateMutex.withoutSync { state in
+            state.allEventListeners.removeAll()
+            state.namedEventListeners.removeAll()
+        }
     }
 
     /// RTE5: Removes all listeners for a specific event
-    internal func off(_ event: Event) {
-        namedEventListeners.removeValue(forKey: event)
+    internal func nosync_off(_ event: Event) {
+        mutableStateMutex.withoutSync { state in
+            _ = state.namedEventListeners.removeValue(forKey: event)
+        }
     }
 
     // MARK: - InternalEventEmitter conformance
 
     /// RTE6: Emits an event, calling registered listeners
     /// RTE6a: The set of listeners must not change during emit
-    internal func emit(event: Event, data: Data) {
-        // Create snapshots to ensure RTE6a compliance - listeners called during emit don't affect this invocation
-        let allEventListenersSnapshot = allEventListeners
-        let namedEventListenersSnapshot = namedEventListeners[event] ?? []
+    internal func nosync_emit(event: Event, data: Data) {
+        // Take snapshots inside withoutSync to ensure RTE6a compliance
+        let (allSnapshot, namedSnapshot) = mutableStateMutex.withoutSync { state -> ([ListenerRegistration<EventListener<Event, Data>>], [ListenerRegistration<NamedEventListener<Data>>]) in
+            let allListeners = state.allEventListeners
+            let namedListeners = state.namedEventListeners[event] ?? []
+            return (allListeners, namedListeners)
+        }
 
-        // Collect all listener IDs that need to be removed
+        // Collect all once-listener IDs that need to be removed
         var idsToRemove: [UUID] = []
 
-        // Call all-event listeners
-        for registration in allEventListenersSnapshot {
-            // Call listener per RTE6
+        // Call all-event listeners from the snapshot (outside withoutSync to avoid exclusivity violation if a listener re-enters the emitter)
+        for registration in allSnapshot {
             registration.listener(event, data)
 
-            // Mark for removal if it was a once listener
             if registration.once {
                 idsToRemove.append(registration.id)
             }
         }
 
-        // Call named event listeners
-        for registration in namedEventListenersSnapshot {
-            // Call listener per RTE6
+        // Call named event listeners from the snapshot
+        for registration in namedSnapshot {
             registration.listener(data)
 
-            // Mark for removal if it was a once listener
             if registration.once {
                 idsToRemove.append(registration.id)
             }
@@ -119,25 +146,27 @@ internal class DefaultInternalEventEmitter<Event: Hashable, Data>: InternalEvent
 
         // Remove all once listeners in one pass
         for id in idsToRemove {
-            removeRegistration(id: id)
+            nosync_removeRegistration(id: id)
         }
     }
 
     // MARK: - Registration removal (called internally and by SubscriptionController)
 
-    internal func removeRegistration(id: UUID) {
-        // Remove from all-event listeners
-        allEventListeners.removeAll { registration in
-            registration.id == id
-        }
-
-        // Remove from named-event listeners
-        for (event, listeners) in namedEventListeners {
-            namedEventListeners[event] = listeners.filter { registration in
-                registration.id != id
+    internal func nosync_removeRegistration(id: UUID) {
+        mutableStateMutex.withoutSync { state in
+            // Remove from all-event listeners
+            state.allEventListeners.removeAll { registration in
+                registration.id == id
             }
-            if namedEventListeners[event]?.isEmpty == true {
-                namedEventListeners.removeValue(forKey: event)
+
+            // Remove from named-event listeners
+            for (event, listeners) in state.namedEventListeners {
+                state.namedEventListeners[event] = listeners.filter { registration in
+                    registration.id != id
+                }
+                if state.namedEventListeners[event]?.isEmpty == true {
+                    _ = state.namedEventListeners.removeValue(forKey: event)
+                }
             }
         }
     }

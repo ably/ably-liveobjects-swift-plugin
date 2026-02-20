@@ -4,468 +4,550 @@
 import Foundation
 import Testing
 
-@MainActor
 struct DefaultInternalEventEmitterTests {
     // Test event types for testing
-    enum TestEvent: String, Equatable, CaseIterable {
+    enum TestEvent: String, Equatable, CaseIterable, Sendable {
         case connect
         case disconnect
         case message
     }
 
-    struct TestData: Equatable {
+    struct TestData: Equatable, Sendable {
         let value: String
     }
 
     // MARK: - RTE3 Tests (on method)
 
     @Test
-    func onListenerForAllEvents() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var receivedEvents: [(TestEvent, TestData)] = []
+    func onListenerForAllEvents() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // RTE3: Register listener for all events
-        emitter.on { event, data in
-            receivedEvents.append((event, data))
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let receivedEvents = DispatchQueueMutex<[(TestEvent, TestData)]>(dispatchQueue: internalQueue, initialValue: [])
+
+            // RTE3: Register listener for all events
+            emitter.nosync_on { event, data in
+                receivedEvents.withoutSync { $0.append((event, data)) }
+            }
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+            emitter.nosync_emit(event: .disconnect, data: testData)
+
+            let received = receivedEvents.withoutSync { $0 }
+            #expect(received.count == 2)
+            #expect(received[0].0 == .connect)
+            #expect(received[1].0 == .disconnect)
         }
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-        emitter.emit(event: .disconnect, data: testData)
-
-        #expect(receivedEvents.count == 2)
-        #expect(receivedEvents[0].0 == .connect)
-        #expect(receivedEvents[1].0 == .disconnect)
     }
 
     @Test
-    func onListenerForSpecificEvent() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var receivedData: [TestData] = []
+    func onListenerForSpecificEvent() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // RTE3: Register listener for specific event
-        emitter.on(.connect) { data in
-            receivedData.append(data)
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let receivedData = DispatchQueueMutex<[TestData]>(dispatchQueue: internalQueue, initialValue: [])
+
+            // RTE3: Register listener for specific event
+            emitter.nosync_on(.connect) { data in
+                receivedData.withoutSync { $0.append(data) }
+            }
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+            emitter.nosync_emit(event: .disconnect, data: testData) // Should not trigger listener
+
+            let received = receivedData.withoutSync { $0 }
+            #expect(received.count == 1)
+            #expect(received[0].value == "test")
         }
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-        emitter.emit(event: .disconnect, data: testData) // Should not trigger listener
-
-        #expect(receivedData.count == 1)
-        #expect(receivedData[0].value == "test")
     }
 
     @Test
-    func onListenerWithSignal() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        let controller = SubscriptionController()
-        var receivedEvents: [(TestEvent, TestData)] = []
+    func onListenerWithSignal() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // RTE3: Register listener with signal
-        emitter.on(signalledBy: controller.signal) { event, data in
-            receivedEvents.append((event, data))
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let controller = SubscriptionController(internalQueue: internalQueue)
+            let receivedEvents = DispatchQueueMutex<[(TestEvent, TestData)]>(dispatchQueue: internalQueue, initialValue: [])
+
+            // RTE3: Register listener with signal
+            emitter.nosync_on(signalledBy: controller.signal) { event, data in
+                receivedEvents.withoutSync { $0.append((event, data)) }
+            }
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+
+            // RTE5: Cancel subscription
+            controller.nosync_off()
+
+            emitter.nosync_emit(event: .disconnect, data: testData) // Should not trigger
+
+            let received = receivedEvents.withoutSync { $0 }
+            #expect(received.count == 1)
+            #expect(received[0].0 == .connect)
         }
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-
-        // RTE5: Cancel subscription
-        controller.off()
-
-        emitter.emit(event: .disconnect, data: testData) // Should not trigger
-
-        #expect(receivedEvents.count == 1)
-        #expect(receivedEvents[0].0 == .connect)
     }
 
     @Test
-    func onListenerMultipleRegistrations() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var callCount = 0
+    func onListenerMultipleRegistrations() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        let listener: MainActorEventListener<TestEvent, TestData> = { _, _ in
-            callCount += 1
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let callCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+
+            let listener: EventListener<TestEvent, TestData> = { _, _ in
+                callCount.withoutSync { $0 += 1 }
+            }
+
+            // RTE3: If on is called more than once with same listener, it's added multiple times
+            emitter.nosync_on(listener)
+            emitter.nosync_on(listener)
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+
+            #expect(callCount.withoutSync { $0 } == 2) // Listener should be called twice
         }
-
-        // RTE3: If on is called more than once with same listener, it's added multiple times
-        emitter.on(listener)
-        emitter.on(listener)
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-
-        #expect(callCount == 2) // Listener should be called twice
     }
 
     @Test
-    func onListenerForSpecificEventWithSignal() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        let controller = SubscriptionController()
-        var receivedData: [TestData] = []
+    func onListenerForSpecificEventWithSignal() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // RTE3: Register listener for specific event with signal
-        emitter.on(.connect, signalledBy: controller.signal) { data in
-            receivedData.append(data)
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let controller = SubscriptionController(internalQueue: internalQueue)
+            let receivedData = DispatchQueueMutex<[TestData]>(dispatchQueue: internalQueue, initialValue: [])
+
+            // RTE3: Register listener for specific event with signal
+            emitter.nosync_on(.connect, signalledBy: controller.signal) { data in
+                receivedData.withoutSync { $0.append(data) }
+            }
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+            emitter.nosync_emit(event: .disconnect, data: testData) // Should not trigger listener
+
+            let received = receivedData.withoutSync { $0 }
+            #expect(received.count == 1)
+            #expect(received[0].value == "test")
+
+            // RTE5: Cancel subscription
+            controller.nosync_off()
+
+            emitter.nosync_emit(event: .connect, data: testData) // Should not trigger after nosync_off()
+            #expect(receivedData.withoutSync { $0.count } == 1) // Should not increment
         }
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-        emitter.emit(event: .disconnect, data: testData) // Should not trigger listener
-
-        #expect(receivedData.count == 1)
-        #expect(receivedData[0].value == "test")
-
-        // RTE5: Cancel subscription
-        controller.off()
-
-        emitter.emit(event: .connect, data: testData) // Should not trigger after off()
-        #expect(receivedData.count == 1) // Should not increment
     }
 
     // MARK: - RTE4 Tests (once method)
 
     @Test
-    func onceListenerForAllEvents() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var receivedEvents: [(TestEvent, TestData)] = []
+    func onceListenerForAllEvents() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // RTE4: Register one-time listener
-        emitter.once { event, data in
-            receivedEvents.append((event, data))
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let receivedEvents = DispatchQueueMutex<[(TestEvent, TestData)]>(dispatchQueue: internalQueue, initialValue: [])
+
+            // RTE4: Register one-time listener
+            emitter.nosync_once { event, data in
+                receivedEvents.withoutSync { $0.append((event, data)) }
+            }
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+            emitter.nosync_emit(event: .disconnect, data: testData) // Should not trigger
+
+            let received = receivedEvents.withoutSync { $0 }
+            #expect(received.count == 1)
+            #expect(received[0].0 == .connect)
         }
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-        emitter.emit(event: .disconnect, data: testData) // Should not trigger
-
-        #expect(receivedEvents.count == 1)
-        #expect(receivedEvents[0].0 == .connect)
     }
 
     @Test
-    func onceListenerForSpecificEvent() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var receivedData: [TestData] = []
+    func onceListenerForSpecificEvent() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // RTE4: Register one-time listener for specific event
-        emitter.once(.connect) { data in
-            receivedData.append(data)
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let receivedData = DispatchQueueMutex<[TestData]>(dispatchQueue: internalQueue, initialValue: [])
+
+            // RTE4: Register one-time listener for specific event
+            emitter.nosync_once(.connect) { data in
+                receivedData.withoutSync { $0.append(data) }
+            }
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+            emitter.nosync_emit(event: .connect, data: testData) // Should not trigger again
+
+            let received = receivedData.withoutSync { $0 }
+            #expect(received.count == 1)
+            #expect(received[0].value == "test")
         }
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-        emitter.emit(event: .connect, data: testData) // Should not trigger again
-
-        #expect(receivedData.count == 1)
-        #expect(receivedData[0].value == "test")
     }
 
     @Test
-    func onceListenerMultipleRegistrations() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var callCount = 0
+    func onceListenerMultipleRegistrations() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        let listener: MainActorEventListener<TestEvent, TestData> = { _, _ in
-            callCount += 1
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let callCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+
+            let listener: EventListener<TestEvent, TestData> = { _, _ in
+                callCount.withoutSync { $0 += 1 }
+            }
+
+            // RTE4: If once is called multiple times with same listener, each registration is invoked once
+            emitter.nosync_once(listener)
+            emitter.nosync_once(listener)
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+
+            #expect(callCount.withoutSync { $0 } == 2) // Both registrations should be called once
+
+            emitter.nosync_emit(event: .disconnect, data: testData) // Should not trigger any more
+            #expect(callCount.withoutSync { $0 } == 2) // Count should remain the same
         }
-
-        // RTE4: If once is called multiple times with same listener, each registration is invoked once
-        emitter.once(listener)
-        emitter.once(listener)
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-
-        #expect(callCount == 2) // Both registrations should be called once
-
-        emitter.emit(event: .disconnect, data: testData) // Should not trigger any more
-        #expect(callCount == 2) // Count should remain the same
     }
 
     @Test
-    func onceListenerWithSignal() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        let controller = SubscriptionController()
-        var receivedEvents: [(TestEvent, TestData)] = []
+    func onceListenerWithSignal() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // RTE4: Register one-time listener with signal
-        emitter.once(signalledBy: controller.signal) { event, data in
-            receivedEvents.append((event, data))
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let controller = SubscriptionController(internalQueue: internalQueue)
+            let receivedEvents = DispatchQueueMutex<[(TestEvent, TestData)]>(dispatchQueue: internalQueue, initialValue: [])
+
+            // RTE4: Register one-time listener with signal
+            emitter.nosync_once(signalledBy: controller.signal) { event, data in
+                receivedEvents.withoutSync { $0.append((event, data)) }
+            }
+
+            // RTE5: Cancel subscription before it fires
+            controller.nosync_off()
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData) // Should not trigger due to nosync_off()
+
+            #expect(receivedEvents.withoutSync { $0 }.isEmpty)
         }
-
-        // RTE5: Cancel subscription before it fires
-        controller.off()
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData) // Should not trigger due to off()
-
-        #expect(receivedEvents.isEmpty)
     }
 
     @Test
-    func onceListenerForSpecificEventWithSignal() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        let controller = SubscriptionController()
-        var receivedData: [TestData] = []
+    func onceListenerForSpecificEventWithSignal() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // RTE4: Register one-time listener for specific event with signal
-        emitter.once(.connect, signalledBy: controller.signal) { data in
-            receivedData.append(data)
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let controller = SubscriptionController(internalQueue: internalQueue)
+            let receivedData = DispatchQueueMutex<[TestData]>(dispatchQueue: internalQueue, initialValue: [])
+
+            // RTE4: Register one-time listener for specific event with signal
+            emitter.nosync_once(.connect, signalledBy: controller.signal) { data in
+                receivedData.withoutSync { $0.append(data) }
+            }
+
+            // RTE5: Cancel subscription before it fires
+            controller.nosync_off()
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData) // Should not trigger due to nosync_off()
+
+            #expect(receivedData.withoutSync { $0 }.isEmpty)
         }
-
-        // RTE5: Cancel subscription before it fires
-        controller.off()
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData) // Should not trigger due to off()
-
-        #expect(receivedData.isEmpty)
     }
 
     // MARK: - RTE6 Tests (emit method)
 
     @Test
-    func emitCallsAllRegisteredListeners() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var allEventCallCount = 0
-        var namedEventCallCount = 0
+    func emitCallsAllRegisteredListeners() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        emitter.on { _, _ in allEventCallCount += 1 }
-        emitter.on(.connect) { _ in namedEventCallCount += 1 }
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let allEventCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+            let namedEventCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
 
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
+            emitter.nosync_on { _, _ in allEventCallCount.withoutSync { $0 += 1 } }
+            emitter.nosync_on(.connect) { _ in namedEventCallCount.withoutSync { $0 += 1 } }
 
-        #expect(allEventCallCount == 1)
-        #expect(namedEventCallCount == 1)
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+
+            #expect(allEventCallCount.withoutSync { $0 } == 1)
+            #expect(namedEventCallCount.withoutSync { $0 } == 1)
+        }
     }
 
     // MARK: - RTE6a Tests (listener set stability during emit)
 
     @Test
-    func emitListenerSetStability() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var callOrder: [String] = []
+    func emitListenerSetStability() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        emitter.on { _, _ in
-            callOrder.append("first")
-            // Add another listener during emit - should not be called in this emit
-            emitter.on { _, _ in
-                callOrder.append("added-during-emit")
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let callOrder = DispatchQueueMutex<[String]>(dispatchQueue: internalQueue, initialValue: [])
+
+            emitter.nosync_on { _, _ in
+                callOrder.withoutSync { $0.append("first") }
+                // Add another listener during emit - should not be called in this emit
+                emitter.nosync_on { _, _ in
+                    callOrder.withoutSync { $0.append("added-during-emit") }
+                }
             }
+
+            emitter.nosync_on { _, _ in
+                callOrder.withoutSync { $0.append("second") }
+            }
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+
+            // RTE6a: Only original listeners should be called
+            #expect(callOrder.withoutSync { $0 } == ["first", "second"])
+
+            // Emit again - now the added listener should be called
+            callOrder.withoutSync { $0.removeAll() }
+            emitter.nosync_emit(event: .disconnect, data: testData)
+
+            #expect(callOrder.withoutSync { $0 } == ["first", "second", "added-during-emit"])
         }
-
-        emitter.on { _, _ in
-            callOrder.append("second")
-        }
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-
-        // RTE6a: Only original listeners should be called
-        #expect(callOrder == ["first", "second"])
-
-        // Emit again - now the added listener should be called
-        callOrder.removeAll()
-        emitter.emit(event: .disconnect, data: testData)
-        #expect(callOrder == ["first", "second", "added-during-emit"])
     }
 
     @Test
-    func emitListenerRemovalDuringEmit() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        let controller = SubscriptionController()
-        var callOrder: [String] = []
+    func emitListenerRemovalDuringEmit() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        emitter.on { _, _ in
-            callOrder.append("first")
-            // Remove this listener during emit - but it should still complete per RTE6a
-            controller.off()
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let controller = SubscriptionController(internalQueue: internalQueue)
+            let callOrder = DispatchQueueMutex<[String]>(dispatchQueue: internalQueue, initialValue: [])
+
+            emitter.nosync_on { _, _ in
+                callOrder.withoutSync { $0.append("first") }
+                // Remove this listener during emit - but it should still complete per RTE6a
+                controller.nosync_off()
+            }
+
+            emitter.nosync_on(signalledBy: controller.signal) { _, _ in
+                callOrder.withoutSync { $0.append("second") }
+            }
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+
+            // RTE6a: Both listeners should be called despite removal during emit
+            #expect(callOrder.withoutSync { $0 } == ["first", "second"])
+
+            // Emit again - now only first listener should be called
+            callOrder.withoutSync { $0.removeAll() }
+            emitter.nosync_emit(event: .disconnect, data: testData)
+
+            #expect(callOrder.withoutSync { $0 } == ["first"])
         }
-
-        emitter.on(signalledBy: controller.signal) { _, _ in
-            callOrder.append("second")
-        }
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-
-        // RTE6a: Both listeners should be called despite removal during emit
-        #expect(callOrder == ["first", "second"])
-
-        // Emit again - now only first listener should be called
-        callOrder.removeAll()
-        emitter.emit(event: .disconnect, data: testData)
-        #expect(callOrder == ["first"])
     }
 
     // MARK: - RTE5 Tests (off method)
 
     @Test
-    func offRemovesAllListeners() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var allEventCallCount = 0
-        var connectCallCount = 0
-        var disconnectCallCount = 0
+    func offRemovesAllListeners() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // Register various listeners
-        emitter.on { _, _ in allEventCallCount += 1 }
-        emitter.on(.connect) { _ in connectCallCount += 1 }
-        emitter.on(.disconnect) { _ in disconnectCallCount += 1 }
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let allEventCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+            let connectCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+            let disconnectCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
 
-        let testData = TestData(value: "test")
+            // Register various listeners
+            emitter.nosync_on { _, _ in allEventCallCount.withoutSync { $0 += 1 } }
+            emitter.nosync_on(.connect) { _ in connectCallCount.withoutSync { $0 += 1 } }
+            emitter.nosync_on(.disconnect) { _ in disconnectCallCount.withoutSync { $0 += 1 } }
 
-        // Verify listeners work before off()
-        emitter.emit(event: .connect, data: testData)
-        #expect(allEventCallCount == 1)
-        #expect(connectCallCount == 1)
-        #expect(disconnectCallCount == 0)
+            let testData = TestData(value: "test")
 
-        // RTE5: Remove all listeners
-        emitter.off()
+            // Verify listeners work before nosync_off()
+            emitter.nosync_emit(event: .connect, data: testData)
+            #expect(allEventCallCount.withoutSync { $0 } == 1)
+            #expect(connectCallCount.withoutSync { $0 } == 1)
+            #expect(disconnectCallCount.withoutSync { $0 } == 0)
 
-        // Reset counters and emit - no listeners should be called
-        allEventCallCount = 0
-        connectCallCount = 0
-        disconnectCallCount = 0
+            // RTE5: Remove all listeners
+            emitter.nosync_off()
 
-        emitter.emit(event: .connect, data: testData)
-        emitter.emit(event: .disconnect, data: testData)
+            // Emit again - no listeners should be called
+            allEventCallCount.withoutSync { $0 = 0 }
+            connectCallCount.withoutSync { $0 = 0 }
+            disconnectCallCount.withoutSync { $0 = 0 }
 
-        #expect(allEventCallCount == 0)
-        #expect(connectCallCount == 0)
-        #expect(disconnectCallCount == 0)
+            emitter.nosync_emit(event: .connect, data: testData)
+            emitter.nosync_emit(event: .disconnect, data: testData)
+
+            #expect(allEventCallCount.withoutSync { $0 } == 0)
+            #expect(connectCallCount.withoutSync { $0 } == 0)
+            #expect(disconnectCallCount.withoutSync { $0 } == 0)
+        }
     }
 
     @Test
-    func offForSpecificEventRemovesOnlyThatEvent() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var allEventCallCount = 0
-        var connectCallCount = 0
-        var disconnectCallCount = 0
+    func offForSpecificEventRemovesOnlyThatEvent() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // Register various listeners
-        emitter.on { _, _ in allEventCallCount += 1 }
-        emitter.on(.connect) { _ in connectCallCount += 1 }
-        emitter.on(.disconnect) { _ in disconnectCallCount += 1 }
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let allEventCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+            let connectCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+            let disconnectCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
 
-        let testData = TestData(value: "test")
+            // Register various listeners
+            emitter.nosync_on { _, _ in allEventCallCount.withoutSync { $0 += 1 } }
+            emitter.nosync_on(.connect) { _ in connectCallCount.withoutSync { $0 += 1 } }
+            emitter.nosync_on(.disconnect) { _ in disconnectCallCount.withoutSync { $0 += 1 } }
 
-        // Verify listeners work before off()
-        emitter.emit(event: .connect, data: testData)
-        #expect(allEventCallCount == 1)
-        #expect(connectCallCount == 1)
-        #expect(disconnectCallCount == 0)
+            let testData = TestData(value: "test")
 
-        // RTE5: Remove only connect listeners
-        emitter.off(.connect)
+            // Verify listeners work before nosync_off()
+            emitter.nosync_emit(event: .connect, data: testData)
+            #expect(allEventCallCount.withoutSync { $0 } == 1)
+            #expect(connectCallCount.withoutSync { $0 } == 1)
+            #expect(disconnectCallCount.withoutSync { $0 } == 0)
 
-        // Reset counters and emit - only connect listeners should be removed
-        allEventCallCount = 0
-        connectCallCount = 0
-        disconnectCallCount = 0
+            // RTE5: Remove only connect listeners
+            emitter.nosync_off(.connect)
 
-        emitter.emit(event: .connect, data: testData)
-        #expect(allEventCallCount == 1) // All-event listener should still work
-        #expect(connectCallCount == 0) // Connect listener should be removed
-        #expect(disconnectCallCount == 0)
+            // Reset counters and emit - only connect listeners should be removed
+            allEventCallCount.withoutSync { $0 = 0 }
+            connectCallCount.withoutSync { $0 = 0 }
+            disconnectCallCount.withoutSync { $0 = 0 }
 
-        emitter.emit(event: .disconnect, data: testData)
-        #expect(allEventCallCount == 2) // All-event listener should still work
-        #expect(connectCallCount == 0)
-        #expect(disconnectCallCount == 1) // Disconnect listener should still work
+            emitter.nosync_emit(event: .connect, data: testData)
+            #expect(allEventCallCount.withoutSync { $0 } == 1) // All-event listener should still work
+            #expect(connectCallCount.withoutSync { $0 } == 0) // Connect listener should be removed
+            #expect(disconnectCallCount.withoutSync { $0 } == 0)
+
+            emitter.nosync_emit(event: .disconnect, data: testData)
+            #expect(allEventCallCount.withoutSync { $0 } == 2) // All-event listener should still work
+            #expect(connectCallCount.withoutSync { $0 } == 0)
+            #expect(disconnectCallCount.withoutSync { $0 } == 1) // Disconnect listener should still work
+        }
     }
 
     // MARK: - RTE5 - SubscriptionController Tests
 
     @Test
-    func subscriptionControllerOff() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        let controller = SubscriptionController()
-        var callCount = 0
+    func subscriptionControllerOff() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        emitter.on(signalledBy: controller.signal) { _, _ in
-            callCount += 1
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let controller = SubscriptionController(internalQueue: internalQueue)
+            let callCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+
+            emitter.nosync_on(signalledBy: controller.signal) { _, _ in
+                callCount.withoutSync { $0 += 1 }
+            }
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+            #expect(callCount.withoutSync { $0 } == 1)
+
+            controller.nosync_off()
+            emitter.nosync_emit(event: .disconnect, data: testData)
+            #expect(callCount.withoutSync { $0 } == 1) // Should not increment
         }
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-        #expect(callCount == 1)
-
-        controller.off()
-        emitter.emit(event: .disconnect, data: testData)
-        #expect(callCount == 1) // Should not increment
     }
 
     @Test
-    func unsubscribeFromWithinListener() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        let controller = SubscriptionController()
-        var callCount = 0
+    func unsubscribeFromWithinListener() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // Test unsubscribing from within listener callback
-        emitter.on(signalledBy: controller.signal) { _, _ in
-            callCount += 1
-            controller.off() // Unsubscribe from within callback
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let controller = SubscriptionController(internalQueue: internalQueue)
+            let callCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+
+            // Test unsubscribing from within listener callback
+            emitter.nosync_on(signalledBy: controller.signal) { _, _ in
+                callCount.withoutSync { $0 += 1 }
+                controller.nosync_off() // Unsubscribe from within callback
+            }
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+            #expect(callCount.withoutSync { $0 } == 1)
+
+            // Should not be called again
+            emitter.nosync_emit(event: .disconnect, data: testData)
+            #expect(callCount.withoutSync { $0 } == 1)
         }
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-        #expect(callCount == 1)
-
-        // Should not be called again
-        emitter.emit(event: .disconnect, data: testData)
-        #expect(callCount == 1)
     }
 
     @Test
-    func subscriptionControllerOffDoesNotAffectFutureSubscriptions() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        let controller = SubscriptionController()
-        var firstCallCount = 0
-        var secondCallCount = 0
+    func subscriptionControllerOffDoesNotAffectFutureSubscriptions() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // First subscription
-        emitter.on(signalledBy: controller.signal) { _, _ in
-            firstCallCount += 1
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let controller = SubscriptionController(internalQueue: internalQueue)
+            let firstCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+            let secondCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+
+            // First subscription
+            emitter.nosync_on(signalledBy: controller.signal) { _, _ in
+                firstCallCount.withoutSync { $0 += 1 }
+            }
+
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+            #expect(firstCallCount.withoutSync { $0 } == 1)
+
+            // Cancel first subscription
+            controller.nosync_off()
+
+            // Add another subscription with the same signal - should work
+            emitter.nosync_on(signalledBy: controller.signal) { _, _ in
+                secondCallCount.withoutSync { $0 += 1 }
+            }
+
+            emitter.nosync_emit(event: .disconnect, data: testData)
+            #expect(firstCallCount.withoutSync { $0 } == 1) // Should not increment
+            #expect(secondCallCount.withoutSync { $0 } == 1) // Should work despite previous nosync_off() call
         }
-
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-        #expect(firstCallCount == 1)
-
-        // Cancel first subscription
-        controller.off()
-
-        // Add another subscription with the same signal - should work
-        emitter.on(signalledBy: controller.signal) { _, _ in
-            secondCallCount += 1
-        }
-
-        emitter.emit(event: .disconnect, data: testData)
-        #expect(firstCallCount == 1) // Should not increment
-        #expect(secondCallCount == 1) // Should work despite previous off() call
     }
 
     @Test
-    func subscriptionContinuesAfterControllerDeallocation() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var callCount = 0
+    func subscriptionContinuesAfterControllerDeallocation() {
+        let internalQueue = TestFactories.createInternalQueue()
+        // `emitter` and `callCount` outlive the first `ably_syncNoDeadlock` block (they are
+        // also used by the second one), so they are created here rather than inside it.
+        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+        let callCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
 
         // Create subscription with controller that will be deallocated
         weak var weakController: SubscriptionController?
-        do {
-            let controller = SubscriptionController()
+        internalQueue.ably_syncNoDeadlock {
+            let controller = SubscriptionController(internalQueue: internalQueue)
             weakController = controller
-            emitter.on(signalledBy: controller.signal) { _, _ in
-                callCount += 1
+            emitter.nosync_on(signalledBy: controller.signal) { _, _ in
+                callCount.withoutSync { $0 += 1 }
             }
 
             // Verify subscription works initially
             let testData = TestData(value: "test")
-            emitter.emit(event: .connect, data: testData)
-            #expect(callCount == 1)
+            emitter.nosync_emit(event: .connect, data: testData)
+            #expect(callCount.withoutSync { $0 } == 1)
 
             // Controller will be deallocated when leaving this scope
         }
@@ -473,104 +555,120 @@ struct DefaultInternalEventEmitterTests {
         precondition(weakController == nil)
 
         // Emit another value now that the controller has been deallocated
-        let testData = TestData(value: "test2")
-        emitter.emit(event: .disconnect, data: testData)
+        internalQueue.ably_syncNoDeadlock {
+            let testData = TestData(value: "test2")
+            emitter.nosync_emit(event: .disconnect, data: testData)
 
-        // The subscription should still work because listener registration is independent
-        // of controller lifetime - only calling off() should remove it
-        #expect(callCount == 2)
+            // The subscription should still work because listener registration is independent
+            // of controller lifetime - only calling nosync_off() should remove it
+            #expect(callCount.withoutSync { $0 } == 2)
+        }
     }
 
     // MARK: - Mixed Scenarios Tests
 
     @Test
-    func mixedOnAndOnceListeners() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var onCallCount = 0
-        var onceCallCount = 0
+    func mixedOnAndOnceListeners() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        emitter.on { _, _ in onCallCount += 1 }
-        emitter.once { _, _ in onceCallCount += 1 }
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let onCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+            let onceCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
 
-        let testData = TestData(value: "test")
-        emitter.emit(event: .connect, data: testData)
-        #expect(onCallCount == 1)
-        #expect(onceCallCount == 1)
+            emitter.nosync_on { _, _ in onCallCount.withoutSync { $0 += 1 } }
+            emitter.nosync_once { _, _ in onceCallCount.withoutSync { $0 += 1 } }
 
-        emitter.emit(event: .disconnect, data: testData)
-        #expect(onCallCount == 2) // Should increment
-        #expect(onceCallCount == 1) // Should not increment
+            let testData = TestData(value: "test")
+            emitter.nosync_emit(event: .connect, data: testData)
+            #expect(onCallCount.withoutSync { $0 } == 1)
+            #expect(onceCallCount.withoutSync { $0 } == 1)
+
+            emitter.nosync_emit(event: .disconnect, data: testData)
+            #expect(onCallCount.withoutSync { $0 } == 2) // Should increment
+            #expect(onceCallCount.withoutSync { $0 } == 1) // Should not increment
+        }
     }
 
     @Test
-    func mixedAllEventAndNamedEventListeners() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        var allEventCallCount = 0
-        var connectCallCount = 0
-        var disconnectCallCount = 0
+    func mixedAllEventAndNamedEventListeners() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        emitter.on { _, _ in allEventCallCount += 1 }
-        emitter.on(.connect) { _ in connectCallCount += 1 }
-        emitter.on(.disconnect) { _ in disconnectCallCount += 1 }
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let allEventCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+            let connectCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
+            let disconnectCallCount = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: 0)
 
-        let testData = TestData(value: "test")
+            emitter.nosync_on { _, _ in allEventCallCount.withoutSync { $0 += 1 } }
+            emitter.nosync_on(.connect) { _ in connectCallCount.withoutSync { $0 += 1 } }
+            emitter.nosync_on(.disconnect) { _ in disconnectCallCount.withoutSync { $0 += 1 } }
 
-        emitter.emit(event: .connect, data: testData)
-        #expect(allEventCallCount == 1)
-        #expect(connectCallCount == 1)
-        #expect(disconnectCallCount == 0)
+            let testData = TestData(value: "test")
 
-        emitter.emit(event: .disconnect, data: testData)
-        #expect(allEventCallCount == 2)
-        #expect(connectCallCount == 1)
-        #expect(disconnectCallCount == 1)
+            emitter.nosync_emit(event: .connect, data: testData)
+            #expect(allEventCallCount.withoutSync { $0 } == 1)
+            #expect(connectCallCount.withoutSync { $0 } == 1)
+            #expect(disconnectCallCount.withoutSync { $0 } == 0)
 
-        emitter.emit(event: .message, data: testData)
-        #expect(allEventCallCount == 3)
-        #expect(connectCallCount == 1)
-        #expect(disconnectCallCount == 1)
+            emitter.nosync_emit(event: .disconnect, data: testData)
+            #expect(allEventCallCount.withoutSync { $0 } == 2)
+            #expect(connectCallCount.withoutSync { $0 } == 1)
+            #expect(disconnectCallCount.withoutSync { $0 } == 1)
+
+            emitter.nosync_emit(event: .message, data: testData)
+            #expect(allEventCallCount.withoutSync { $0 } == 3)
+            #expect(connectCallCount.withoutSync { $0 } == 1)
+            #expect(disconnectCallCount.withoutSync { $0 } == 1)
+        }
     }
 
     @Test
-    func complexScenario() async throws {
-        let emitter = DefaultInternalEventEmitter<TestEvent, TestData>()
-        let controller1 = SubscriptionController()
-        let controller2 = SubscriptionController()
-        var results: [String] = []
+    func complexScenario() {
+        let internalQueue = TestFactories.createInternalQueue()
 
-        // Mix of on/once, all-event/named-event, with/without signals
-        emitter.on { event, _ in results.append("all-on-\(event)") }
-        emitter.once { event, _ in results.append("all-once-\(event)") }
-        emitter.on(.connect) { _ in results.append("connect-on") }
-        emitter.once(.connect) { _ in results.append("connect-once") }
-        emitter.on(signalledBy: controller1.signal) { event, _ in results.append("signal1-\(event)") }
-        emitter.on(.connect, signalledBy: controller2.signal) { _ in results.append("connect-signal2") }
+        internalQueue.ably_syncNoDeadlock {
+            let emitter = DefaultInternalEventEmitter<TestEvent, TestData>(internalQueue: internalQueue)
+            let controller1 = SubscriptionController(internalQueue: internalQueue)
+            let controller2 = SubscriptionController(internalQueue: internalQueue)
+            let results = DispatchQueueMutex<[String]>(dispatchQueue: internalQueue, initialValue: [])
 
-        let testData = TestData(value: "test")
+            // Mix of on/once, all-event/named-event, with/without signals
+            emitter.nosync_on { event, _ in results.withoutSync { $0.append("all-on-\(event)") } }
+            emitter.nosync_once { event, _ in results.withoutSync { $0.append("all-once-\(event)") } }
+            emitter.nosync_on(.connect) { _ in results.withoutSync { $0.append("connect-on") } }
+            emitter.nosync_once(.connect) { _ in results.withoutSync { $0.append("connect-once") } }
+            emitter.nosync_on(signalledBy: controller1.signal) { event, _ in results.withoutSync { $0.append("signal1-\(event)") } }
+            emitter.nosync_on(.connect, signalledBy: controller2.signal) { _ in results.withoutSync { $0.append("connect-signal2") } }
 
-        // First emit
-        emitter.emit(event: .connect, data: testData)
-        #expect(results.count == 6)
-        #expect(results.contains("all-on-connect"))
-        #expect(results.contains("all-once-connect"))
-        #expect(results.contains("connect-on"))
-        #expect(results.contains("connect-once"))
-        #expect(results.contains("signal1-connect"))
-        #expect(results.contains("connect-signal2"))
+            let testData = TestData(value: "test")
 
-        results.removeAll()
+            // First emit
+            emitter.nosync_emit(event: .connect, data: testData)
+            let firstResults = results.withoutSync { $0 }
+            #expect(firstResults.count == 6)
+            #expect(firstResults.contains("all-on-connect"))
+            #expect(firstResults.contains("all-once-connect"))
+            #expect(firstResults.contains("connect-on"))
+            #expect(firstResults.contains("connect-once"))
+            #expect(firstResults.contains("signal1-connect"))
+            #expect(firstResults.contains("connect-signal2"))
 
-        // Cancel one signal
-        controller1.off()
+            results.withoutSync { $0.removeAll() }
 
-        // Second emit
-        emitter.emit(event: .connect, data: testData)
-        #expect(results.count == 3) // once listeners should not fire again, signal1 should not fire
-        #expect(results.contains("all-on-connect"))
-        #expect(results.contains("connect-on"))
-        #expect(results.contains("connect-signal2"))
-        #expect(!results.contains("all-once-connect"))
-        #expect(!results.contains("connect-once"))
-        #expect(!results.contains("signal1-connect"))
+            // Cancel one signal
+            controller1.nosync_off()
+
+            // Second emit
+            emitter.nosync_emit(event: .connect, data: testData)
+            let secondResults = results.withoutSync { $0 }
+            #expect(secondResults.count == 3) // once listeners should not fire again, signal1 should not fire
+            #expect(secondResults.contains("all-on-connect"))
+            #expect(secondResults.contains("connect-on"))
+            #expect(secondResults.contains("connect-signal2"))
+            #expect(!secondResults.contains("all-once-connect"))
+            #expect(!secondResults.contains("connect-once"))
+            #expect(!secondResults.contains("signal1-connect"))
+        }
     }
 }
