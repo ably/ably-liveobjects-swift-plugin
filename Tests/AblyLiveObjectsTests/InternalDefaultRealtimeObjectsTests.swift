@@ -1212,11 +1212,16 @@ struct InternalDefaultRealtimeObjectsTests {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, serverTime: .init(timeIntervalSince1970: 1_754_042_434), internalQueue: internalQueue)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             // Track published messages
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
-                return PublishResult(serials: messages.map { _ in nil })
+                return PublishResult(serials: messages.map { _ in "serial_\(UUID().uuidString)" })
             }
 
             // Call createMap
@@ -1254,11 +1259,16 @@ struct InternalDefaultRealtimeObjectsTests {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             // Track published messages
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
-                return PublishResult(serials: messages.map { _ in nil })
+                return PublishResult(serials: messages.map { _ in "serial_\(UUID().uuidString)" })
             }
 
             // Call createMap with no entries
@@ -1282,6 +1292,11 @@ struct InternalDefaultRealtimeObjectsTests {
             let internalQueue = TestFactories.createInternalQueue()
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
+
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
 
             // Track published messages and the generated objectId
             var publishedMessages: [OutboundObjectMessage] = []
@@ -1349,11 +1364,16 @@ struct InternalDefaultRealtimeObjectsTests {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, serverTime: .init(timeIntervalSince1970: 1_754_042_434), internalQueue: internalQueue)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             // Track published messages
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
-                return PublishResult(serials: messages.map { _ in nil })
+                return PublishResult(serials: messages.map { _ in "serial_\(UUID().uuidString)" })
             }
 
             // Call createCounter
@@ -1384,11 +1404,16 @@ struct InternalDefaultRealtimeObjectsTests {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             // Track published messages
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
-                return PublishResult(serials: messages.map { _ in nil })
+                return PublishResult(serials: messages.map { _ in "serial_\(UUID().uuidString)" })
             }
 
             // Call createCounter with no count
@@ -1413,6 +1438,11 @@ struct InternalDefaultRealtimeObjectsTests {
             let internalQueue = TestFactories.createInternalQueue()
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
+
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
 
             // Track published messages and the generated objectId
             var publishedMessages: [OutboundObjectMessage] = []

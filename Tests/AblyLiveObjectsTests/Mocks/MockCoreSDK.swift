@@ -9,10 +9,12 @@ final class MockCoreSDK: CoreSDK {
 
     private let channelStateMutex: DispatchQueueMutex<_AblyPluginSupportPrivate.RealtimeChannelState>
     private let serverTime: Date
+    private let _siteCode: String?
 
-    init(channelState: _AblyPluginSupportPrivate.RealtimeChannelState, serverTime: Date = .init(), internalQueue: DispatchQueue) {
+    init(channelState: _AblyPluginSupportPrivate.RealtimeChannelState, serverTime: Date = .init(), siteCode: String? = "site1", internalQueue: DispatchQueue) {
         channelStateMutex = DispatchQueueMutex(dispatchQueue: internalQueue, initialValue: channelState)
         self.serverTime = serverTime
+        self._siteCode = siteCode
     }
 
     func publish(objectMessages: [OutboundObjectMessage]) async throws(ARTErrorInfo) -> PublishResult {
@@ -32,7 +34,7 @@ final class MockCoreSDK: CoreSDK {
     }
 
     func nosync_siteCode() -> String? {
-        nil
+        _siteCode
     }
 
     /// Sets a custom publish handler for testing

@@ -606,6 +606,11 @@ struct InternalDefaultLiveCounterTests {
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
             let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
@@ -638,6 +643,11 @@ struct InternalDefaultLiveCounterTests {
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
             let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             coreSDK.setPublishHandler { _ throws(ARTErrorInfo) in
                 throw LiveObjectsError.other(NSError(domain: "test", code: 0, userInfo: [NSLocalizedDescriptionKey: "Publish failed"])).toARTErrorInfo()
             }
@@ -665,6 +675,11 @@ struct InternalDefaultLiveCounterTests {
             let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "counter:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
             let realtimeObjects = InternalDefaultRealtimeObjects(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
+
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
 
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in

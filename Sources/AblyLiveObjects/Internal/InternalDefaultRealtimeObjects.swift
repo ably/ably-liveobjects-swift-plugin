@@ -316,6 +316,16 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
         }
     }
 
+    internal func nosync_onChannelStateChanged(toState state: _AblyPluginSupportPrivate.RealtimeChannelState, reason: ARTErrorInfo?) {
+        mutableStateMutex.withoutSync { mutableState in
+            mutableState.nosync_onChannelStateChanged(
+                toState: state,
+                reason: reason,
+                logger: logger,
+            )
+        }
+    }
+
     internal var testsOnly_receivedObjectProtocolMessages: AsyncStream<[InboundObjectMessage]> {
         receivedObjectProtocolMessages
     }
@@ -429,18 +439,18 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
         if needsToWaitForSync {
             logger.log("publishAndApply: waiting for sync to complete before applying \(syntheticMessages.count) message(s)", level: .debug)
 
+            // RTO20e, RTO20e1: Wait for either sync completion or bad channel state change.
+            // The continuation is stored in MutableState.publishAndApplySyncWaiters and will be
+            // resumed with .success by sync completion, or .failure(92008) by nosync_onChannelStateChanged.
             try await withCheckedContinuation { (continuation: CheckedContinuation<Result<Void, ARTErrorInfo>, _>) in
-                // Subscribe to .synced event
-                onInternal(event: .synced) { [weak self] subscription in
-                    subscription.off()
-                    continuation.resume(returning: .success(()))
-                    _ = self // prevent unused capture warning
+                mutableStateMutex.withSync { mutableState in
+                    // Double-check: sync might have completed while we were setting up
+                    if mutableState.state.toObjectsSyncState == .synced {
+                        continuation.resume(returning: .success(()))
+                    } else {
+                        mutableState.publishAndApplySyncWaiters.append(continuation)
+                    }
                 }
-
-                // RTO20e1: Also monitor channel state changes
-                // TODO: We need access to channel state changes here. For now, we rely on the sync completing.
-                // In a future iteration, we should subscribe to channel state changes (detached/suspended/failed)
-                // and reject with error code 92008.
             }.get()
 
             logger.log("publishAndApply: sync completed, proceeding to apply messages", level: .debug)
@@ -537,6 +547,10 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
         /// RTO7b: Serials of operations that have been applied locally upon ACK but whose echoed OBJECT message has not yet been received.
         internal var appliedOnAckSerials: Set<String> = [] // RTO7b1
 
+        /// RTO20e/RTO20e1: Continuations for `publishAndApply` calls waiting for sync to complete.
+        /// Resumed with `.success` when sync completes, or `.failure` if the channel enters detached/suspended/failed.
+        internal var publishAndApplySyncWaiters: [CheckedContinuation<Result<Void, ARTErrorInfo>, Never>] = []
+
         /// The RTO17 sync state. Also stores the sync sequence data.
         internal var state = State.initialized
 
@@ -618,6 +632,9 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
 
             // RTO4b3, RTO4b4, RTO4b5, RTO5c3, RTO5c4, RTO5c5, RTO5c8
             transition(to: .synced, userCallbackQueue: userCallbackQueue)
+
+            // Resume any publishAndApply waiters now that sync is complete
+            nosync_resumePublishAndApplySyncWaiters(with: .success(()))
         }
 
         /// Implements the `OBJECT_SYNC` handling of RTO5.
@@ -731,6 +748,9 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
 
                 // RTO5c3, RTO5c4, RTO5c5, RTO5c8
                 transition(to: .synced, userCallbackQueue: userCallbackQueue)
+
+                // Resume any publishAndApply waiters now that sync is complete
+                nosync_resumePublishAndApplySyncWaiters(with: .success(()))
             }
         }
 
@@ -831,6 +851,47 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
                 // RTO9a2b
                 logger.log("Unsupported OBJECT operation action \(rawValue) received", level: .warn)
                 return
+            }
+        }
+
+        /// Resumes all `publishAndApply` sync waiters with the given result and clears the list.
+        internal mutating func nosync_resumePublishAndApplySyncWaiters(with result: Result<Void, ARTErrorInfo>) {
+            let waiters = publishAndApplySyncWaiters
+            publishAndApplySyncWaiters.removeAll()
+            for continuation in waiters {
+                continuation.resume(returning: result)
+            }
+        }
+
+        /// RTO20e1: Called when the channel enters detached, suspended, or failed state.
+        /// Rejects all waiting `publishAndApply` calls with error code 92008.
+        internal mutating func nosync_onChannelStateChanged(
+            toState state: _AblyPluginSupportPrivate.RealtimeChannelState,
+            reason: ARTErrorInfo?,
+            logger: Logger,
+        ) {
+            switch state {
+            case .detached, .suspended, .failed:
+                guard !publishAndApplySyncWaiters.isEmpty else {
+                    return
+                }
+
+                logger.log("Channel entered \(state) state; rejecting \(publishAndApplySyncWaiters.count) publishAndApply waiter(s)", level: .debug)
+
+                // RTO20e1
+                var userInfo: [String: Any]? = nil
+                if let reason {
+                    userInfo = [NSUnderlyingErrorKey: reason]
+                }
+                let error = ARTErrorInfo.create(
+                    withCode: 92008,
+                    status: 400,
+                    message: "publishAndApply operation could not be applied locally: channel entered \(state) state whilst waiting for objects sync to complete",
+                    additionalUserInfo: userInfo,
+                )
+                nosync_resumePublishAndApplySyncWaiters(with: .failure(error))
+            default:
+                break
             }
         }
 
