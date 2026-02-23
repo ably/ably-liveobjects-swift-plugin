@@ -20,7 +20,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/ably/ably-cocoa.git",
-            revision: "cb8d732c4602dab2e203b12a4107c4e6d0d85f96",
+            revision: "a4f1fae0e218099b2ca317b86547e237841f3a98",
         ),
         .package(
             url: "https://github.com/ably/ably-cocoa-plugin-support.git",
