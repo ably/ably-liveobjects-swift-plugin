@@ -18,14 +18,13 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // TODO: Pin to commit SHAs before release (currently using local paths for development)
         .package(
-            name: "ably-cocoa",
-            path: "../ably-cocoa",
+            url: "https://github.com/ably/ably-cocoa.git",
+            revision: "cb8d732c4602dab2e203b12a4107c4e6d0d85f96",
         ),
         .package(
-            name: "ably-cocoa-plugin-support",
-            path: "../ably-cocoa-plugin-support",
+            url: "https://github.com/ably/ably-cocoa-plugin-support.git",
+            revision: "7d0197edb97e812024e6f2038e6d8309c28438d2",
         ),
         .package(
             url: "https://github.com/apple/swift-argument-parser",
