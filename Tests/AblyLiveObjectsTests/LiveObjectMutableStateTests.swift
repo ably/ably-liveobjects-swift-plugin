@@ -100,6 +100,7 @@ struct LiveObjectMutableStateTests {
         func canApplyOperation(testCase: TestCase) {
             let state = LiveObjectMutableState<Void>(
                 objectID: "test:object@123",
+                internalQueue: TestFactories.createInternalQueue(),
                 testsOnly_siteTimeserials: testCase.siteTimeserials,
             )
             let logger = TestLogger()
@@ -121,15 +122,15 @@ struct LiveObjectMutableStateTests {
         @available(iOS 17.0.0, tvOS 17.0.0, *)
         @Test(arguments: [.detached, .failed] as [_AblyPluginSupportPrivate.RealtimeChannelState])
         func subscribeThrowsIfChannelIsDetachedOrFailed(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
-            var mutableState = LiveObjectMutableState<String>(objectID: "foo")
+            let internalQueue = TestFactories.createInternalQueue()
+            let mutableState = LiveObjectMutableState<String>(objectID: "foo", internalQueue: internalQueue)
             let queue = DispatchQueue.main
             let subscriber = Subscriber<String, SubscribeResponse>(callbackQueue: queue)
-            let internalQueue = TestFactories.createInternalQueue()
             let coreSDK = MockCoreSDK(channelState: channelState, internalQueue: internalQueue)
 
             #expect {
                 try internalQueue.ably_syncNoDeadlock {
-                    try mutableState.nosync_subscribe(listener: subscriber.createListener(), coreSDK: coreSDK, updateSelfLater: { _ in fatalError("Not expected") })
+                    try mutableState.nosync_subscribe(listener: subscriber.createListener(), coreSDK: coreSDK)
                 }
             } throws: { error in
                 guard let errorInfo = error as? ARTErrorInfo else {
@@ -146,17 +147,19 @@ struct LiveObjectMutableStateTests {
             @Test
             func noop() async throws {
                 // Given
-                var mutableState = LiveObjectMutableState<String>(objectID: "foo")
+                let internalQueue = TestFactories.createInternalQueue()
+                let mutableState = LiveObjectMutableState<String>(objectID: "foo", internalQueue: internalQueue)
                 let queue = DispatchQueue.main
                 let subscriber = Subscriber<String, SubscribeResponse>(callbackQueue: queue)
-                let internalQueue = TestFactories.createInternalQueue()
                 let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
                 try internalQueue.ably_syncNoDeadlock {
-                    _ = try mutableState.nosync_subscribe(listener: subscriber.createListener(), coreSDK: coreSDK, updateSelfLater: { _ in fatalError("Not expected") })
+                    _ = try mutableState.nosync_subscribe(listener: subscriber.createListener(), coreSDK: coreSDK)
                 }
 
                 // When
-                mutableState.emit(.noop, on: queue)
+                internalQueue.ably_syncNoDeadlock {
+                    mutableState.nosync_emit(.noop, on: queue)
+                }
 
                 // Then
                 let subscriberInvocations = await subscriber.getInvocations()
@@ -168,17 +171,19 @@ struct LiveObjectMutableStateTests {
             @Test
             func update() async throws {
                 // Given
-                var mutableState = LiveObjectMutableState<String>(objectID: "foo")
+                let internalQueue = TestFactories.createInternalQueue()
+                let mutableState = LiveObjectMutableState<String>(objectID: "foo", internalQueue: internalQueue)
                 let queue = DispatchQueue.main
                 let subscriber = Subscriber<String, SubscribeResponse>(callbackQueue: queue)
-                let internalQueue = TestFactories.createInternalQueue()
                 let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
                 try internalQueue.ably_syncNoDeadlock {
-                    _ = try mutableState.nosync_subscribe(listener: subscriber.createListener(), coreSDK: coreSDK, updateSelfLater: { _ in fatalError("Not expected") })
+                    _ = try mutableState.nosync_subscribe(listener: subscriber.createListener(), coreSDK: coreSDK)
                 }
 
                 // When
-                mutableState.emit(.update("bar"), on: queue)
+                internalQueue.ably_syncNoDeadlock {
+                    mutableState.nosync_emit(.update("bar"), on: queue)
+                }
 
                 // Then
                 let subscriberInvocations = await subscriber.getInvocations()
@@ -197,27 +202,19 @@ struct LiveObjectMutableStateTests {
                 @discardableResult
                 func subscribe(listener: @escaping LiveObjectUpdateCallback<Update>, coreSDK: CoreSDK) throws(ARTErrorInfo) -> SubscribeResponse {
                     try mutex.withSync { stored throws(ARTErrorInfo) in
-                        try stored.nosync_subscribe(listener: listener, coreSDK: coreSDK, updateSelfLater: { [weak self] action in
-                            guard let self else {
-                                return
-                            }
-
-                            mutex.withSync { stored in
-                                action(&stored)
-                            }
-                        })
+                        try stored.nosync_subscribe(listener: listener, coreSDK: coreSDK)
                     }
                 }
 
                 func emit(_ update: LiveObjectUpdate<Update>, on queue: DispatchQueue) {
                     mutex.withSync { stored in
-                        stored.emit(update, on: queue)
+                        stored.nosync_emit(update, on: queue)
                     }
                 }
 
                 func unsubscribeAll() {
                     mutex.withSync { stored in
-                        stored.unsubscribeAll()
+                        stored.nosync_unsubscribeAll()
                     }
                 }
             }
@@ -229,7 +226,7 @@ struct LiveObjectMutableStateTests {
                 // Given
                 let queue = DispatchQueue.main
                 let internalQueue = TestFactories.createInternalQueue()
-                let store = MutableStateStore<String>(stored: .init(objectID: "foo"), internalQueue: internalQueue)
+                let store = MutableStateStore<String>(stored: .init(objectID: "foo", internalQueue: internalQueue), internalQueue: internalQueue)
                 let subscriber = Subscriber<String, SubscribeResponse>(callbackQueue: queue)
                 let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
                 let subscription = try store.subscribe(listener: subscriber.createListener(), coreSDK: coreSDK)
@@ -251,7 +248,7 @@ struct LiveObjectMutableStateTests {
                 // Given
                 let queue = DispatchQueue.main
                 let internalQueue = TestFactories.createInternalQueue()
-                let store = MutableStateStore<String>(stored: .init(objectID: "foo"), internalQueue: internalQueue)
+                let store = MutableStateStore<String>(stored: .init(objectID: "foo", internalQueue: internalQueue), internalQueue: internalQueue)
                 let subscriber = Subscriber<String, SubscribeResponse>(callbackQueue: queue)
                 let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
                 // Create a listener that calls `unsubscribe` on the `response` that's passed to the listener
@@ -277,7 +274,7 @@ struct LiveObjectMutableStateTests {
                 // Given
                 let queue = DispatchQueue.main
                 let internalQueue = TestFactories.createInternalQueue()
-                let store = MutableStateStore<String>(stored: .init(objectID: "foo"), internalQueue: internalQueue)
+                let store = MutableStateStore<String>(stored: .init(objectID: "foo", internalQueue: internalQueue), internalQueue: internalQueue)
                 let subscriber = Subscriber<String, SubscribeResponse>(callbackQueue: queue)
                 let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
                 // Create a listener that calls `unsubscribe` on the `response` that's passed to the listener
@@ -304,7 +301,7 @@ struct LiveObjectMutableStateTests {
                 // Given
                 let queue = DispatchQueue.main
                 let internalQueue = TestFactories.createInternalQueue()
-                let store = MutableStateStore<String>(stored: .init(objectID: "foo"), internalQueue: internalQueue)
+                let store = MutableStateStore<String>(stored: .init(objectID: "foo", internalQueue: internalQueue), internalQueue: internalQueue)
                 let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
                 let subscribers: [Subscriber<String, SubscribeResponse>] = [
                     .init(callbackQueue: queue),

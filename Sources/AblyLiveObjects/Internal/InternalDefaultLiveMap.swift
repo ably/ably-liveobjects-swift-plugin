@@ -72,7 +72,7 @@ internal final class InternalDefaultLiveMap: Sendable {
     ) {
         mutableStateMutex = .init(
             dispatchQueue: internalQueue,
-            initialValue: .init(liveObjectMutableState: .init(objectID: objectID), data: data, semantics: semantics),
+            initialValue: .init(liveObjectMutableState: .init(objectID: objectID, internalQueue: internalQueue), data: data, semantics: semantics),
         )
         self.logger = logger
         self.userCallbackQueue = userCallbackQueue
@@ -209,44 +209,26 @@ internal final class InternalDefaultLiveMap: Sendable {
     @discardableResult
     internal func subscribe(listener: @escaping LiveObjectUpdateCallback<DefaultLiveMapUpdate>, coreSDK: CoreSDK) throws(ARTErrorInfo) -> any SubscribeResponse {
         try mutableStateMutex.withSync { mutableState throws(ARTErrorInfo) in
-            // swiftlint:disable:next trailing_closure
-            try mutableState.liveObjectMutableState.nosync_subscribe(listener: listener, coreSDK: coreSDK, updateSelfLater: { [weak self] action in
-                guard let self else {
-                    return
-                }
-
-                mutableStateMutex.withSync { mutableState in
-                    action(&mutableState.liveObjectMutableState)
-                }
-            })
+            try mutableState.liveObjectMutableState.nosync_subscribe(listener: listener, coreSDK: coreSDK)
         }
     }
 
     internal func unsubscribeAll() {
         mutableStateMutex.withSync { mutableState in
-            mutableState.liveObjectMutableState.unsubscribeAll()
+            mutableState.liveObjectMutableState.nosync_unsubscribeAll()
         }
     }
 
     @discardableResult
     internal func on(event: LiveObjectLifecycleEvent, callback: @escaping LiveObjectLifecycleEventCallback) -> any OnLiveObjectLifecycleEventResponse {
         mutableStateMutex.withSync { mutableState in
-            // swiftlint:disable:next trailing_closure
-            mutableState.liveObjectMutableState.on(event: event, callback: callback, updateSelfLater: { [weak self] action in
-                guard let self else {
-                    return
-                }
-
-                mutableStateMutex.withSync { mutableState in
-                    action(&mutableState.liveObjectMutableState)
-                }
-            })
+            mutableState.liveObjectMutableState.nosync_on(event: event, callback: callback)
         }
     }
 
     internal func offAll() {
         mutableStateMutex.withSync { mutableState in
-            mutableState.liveObjectMutableState.offAll()
+            mutableState.liveObjectMutableState.nosync_offAll()
         }
     }
 
@@ -257,7 +239,7 @@ internal final class InternalDefaultLiveMap: Sendable {
     /// This is used to instruct this map to emit updates during an `OBJECT_SYNC`.
     internal func nosync_emit(_ update: LiveObjectUpdate<DefaultLiveMapUpdate>) {
         mutableStateMutex.withoutSync { mutableState in
-            mutableState.liveObjectMutableState.emit(update, on: userCallbackQueue)
+            mutableState.liveObjectMutableState.nosync_emit(update, on: userCallbackQueue)
         }
     }
 
@@ -612,7 +594,7 @@ internal final class InternalDefaultLiveMap: Sendable {
                     clock: clock,
                 )
                 // RTLM15d1a
-                liveObjectMutableState.emit(update, on: userCallbackQueue)
+                liveObjectMutableState.nosync_emit(update, on: userCallbackQueue)
             case .known(.mapSet):
                 guard let mapOp = operation.mapOp else {
                     logger.log("Could not apply MAP_SET since operation.mapOp is missing", level: .warn)
@@ -635,7 +617,7 @@ internal final class InternalDefaultLiveMap: Sendable {
                     clock: clock,
                 )
                 // RTLM15d2a
-                liveObjectMutableState.emit(update, on: userCallbackQueue)
+                liveObjectMutableState.nosync_emit(update, on: userCallbackQueue)
             case .known(.mapRemove):
                 guard let mapOp = operation.mapOp else {
                     return
@@ -650,7 +632,7 @@ internal final class InternalDefaultLiveMap: Sendable {
                     clock: clock,
                 )
                 // RTLM15d3a
-                liveObjectMutableState.emit(update, on: userCallbackQueue)
+                liveObjectMutableState.nosync_emit(update, on: userCallbackQueue)
             case .known(.objectDelete):
                 let dataBeforeApplyingOperation = data
 
@@ -663,7 +645,7 @@ internal final class InternalDefaultLiveMap: Sendable {
                 )
 
                 // RTLM15d5a
-                liveObjectMutableState.emit(.update(.init(update: dataBeforeApplyingOperation.mapValues { _ in .removed })), on: userCallbackQueue)
+                liveObjectMutableState.nosync_emit(.update(.init(update: dataBeforeApplyingOperation.mapValues { _ in .removed })), on: userCallbackQueue)
             default:
                 // RTLM15d4
                 logger.log("Operation \(operation) has unsupported action for LiveMap; discarding", level: .warn)
@@ -838,7 +820,7 @@ internal final class InternalDefaultLiveMap: Sendable {
 
             // RTO4b2a
             let mapUpdate = DefaultLiveMapUpdate(update: previousData.mapValues { _ in .removed })
-            liveObjectMutableState.emit(.update(mapUpdate), on: userCallbackQueue)
+            liveObjectMutableState.nosync_emit(.update(mapUpdate), on: userCallbackQueue)
         }
 
         /// Needed for ``InternalLiveObject`` conformance.

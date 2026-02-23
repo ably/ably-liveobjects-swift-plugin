@@ -110,6 +110,7 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
                     userCallbackQueue: userCallbackQueue,
                     clock: clock,
                 ),
+                internalQueue: internalQueue,
                 garbageCollectionGracePeriod: garbageCollectionOptions.gracePeriod,
             ),
         )
@@ -257,40 +258,21 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
     @discardableResult
     internal func on(event: ObjectsEvent, callback: @escaping ObjectsEventCallback) -> any OnObjectsEventResponse {
         mutableStateMutex.withSync { mutableState in
-            // swiftlint:disable:next trailing_closure
-            mutableState.on(event: event, callback: callback, updateSelfLater: { [weak self] action in
-                guard let self else {
-                    return
-                }
-
-                mutableStateMutex.withSync { mutableState in
-                    action(&mutableState)
-                }
-            })
+            mutableState.nosync_on(event: event, callback: callback)
         }
     }
 
     /// Adds a subscriber to the ``internalObjectsEventSubscriptionStorage`` (i.e. unaffected by `offAll()`).
     @discardableResult
     internal func onInternal(event: ObjectsEvent, callback: @escaping ObjectsEventCallback) -> any OnObjectsEventResponse {
-        // TODO: Looking at this again later the whole process for adding a subscriber is really verbose and boilerplate-y, and I think the unfortunate result of me trying to be clever at some point; revisit in https://github.com/ably/ably-liveobjects-swift-plugin/issues/102
         mutableStateMutex.withSync { mutableState in
-            // swiftlint:disable:next trailing_closure
-            mutableState.onInternal(event: event, callback: callback, updateSelfLater: { [weak self] action in
-                guard let self else {
-                    return
-                }
-
-                mutableStateMutex.withSync { mutableState in
-                    action(&mutableState)
-                }
-            })
+            mutableState.nosync_onInternal(event: event, callback: callback)
         }
     }
 
     internal func offAll() {
         mutableStateMutex.withSync { mutableState in
-            mutableState.offAll()
+            mutableState.nosync_offAll()
         }
     }
 
@@ -436,16 +418,27 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
     private struct MutableState {
         internal var objectsPool: ObjectsPool
         internal var onChannelAttachedHasObjects: Bool?
-        internal var objectsEventSubscriptionStorage = SubscriptionStorage<ObjectsEvent, Void>()
+        internal let objectsEventSubscriptionStorage: SubscriptionStorage<ObjectsEvent, Void>
 
         /// Used when the object wishes to subscribe to its own events (i.e. unaffected by `offAll()`); used e.g. to wait for a sync before returning from `getRoot()`, per RTO1c.
-        internal var internalObjectsEventSubscriptionStorage = SubscriptionStorage<ObjectsEvent, Void>()
+        internal let internalObjectsEventSubscriptionStorage: SubscriptionStorage<ObjectsEvent, Void>
 
         /// The RTO10b grace period for which we will retain tombstoned objects and map entries.
         internal var garbageCollectionGracePeriod: GarbageCollectionOptions.GracePeriod
 
         /// The RTO17 sync state. Also stores the sync sequence data.
         internal var state = State.initialized
+
+        init(
+            objectsPool: ObjectsPool,
+            internalQueue: DispatchQueue,
+            garbageCollectionGracePeriod: GarbageCollectionOptions.GracePeriod,
+        ) {
+            self.objectsPool = objectsPool
+            self.garbageCollectionGracePeriod = garbageCollectionGracePeriod
+            objectsEventSubscriptionStorage = SubscriptionStorage(internalQueue: internalQueue)
+            internalObjectsEventSubscriptionStorage = SubscriptionStorage(internalQueue: internalQueue)
+        }
 
         /// Has the same cases as `ObjectsSyncState` but with associated data to store the sync sequence data and represent the constraint that you only have a sync sequence if you're SYNCING.
         internal enum State {
@@ -495,7 +488,7 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
                 return
             }
             // RTO17b
-            emitObjectsEvent(event, on: userCallbackQueue)
+            nosync_emitObjectsEvent(event, on: userCallbackQueue)
         }
 
         internal mutating func nosync_onChannelAttached(
@@ -721,23 +714,14 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
             }
         }
 
-        internal typealias UpdateMutableState = @Sendable (_ action: (inout Self) -> Void) -> Void
-
         @discardableResult
-        internal mutating func on(event: ObjectsEvent, callback: @escaping ObjectsEventCallback, updateSelfLater: @escaping UpdateMutableState) -> any OnObjectsEventResponse {
-            let updateSubscriptionStorage: SubscriptionStorage<ObjectsEvent, Void>.UpdateSubscriptionStorage = { action in
-                updateSelfLater { mutableState in
-                    action(&mutableState.objectsEventSubscriptionStorage)
-                }
-            }
-
-            let subscription = objectsEventSubscriptionStorage.subscribe(
+        internal func nosync_on(event: ObjectsEvent, callback: @escaping ObjectsEventCallback) -> any OnObjectsEventResponse {
+            let subscription = objectsEventSubscriptionStorage.nosync_subscribe(
                 listener: { _, subscriptionInCallback in
                     let response = ObjectsEventResponse(subscription: subscriptionInCallback)
                     callback(response)
                 },
                 eventName: event,
-                updateSelfLater: updateSubscriptionStorage,
             )
 
             return ObjectsEventResponse(subscription: subscription)
@@ -745,21 +729,13 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
 
         /// Adds a subscriber to the ``internalObjectsEventSubscriptionStorage`` (i.e. unaffected by `offAll()`).
         @discardableResult
-        internal mutating func onInternal(event: ObjectsEvent, callback: @escaping ObjectsEventCallback, updateSelfLater: @escaping UpdateMutableState) -> any OnObjectsEventResponse {
-            // TODO: Looking at this again later the whole process for adding a subscriber is really verbose and boilerplate-y, and I think the unfortunate result of me trying to be clever at some point; revisit in https://github.com/ably/ably-liveobjects-swift-plugin/issues/102
-            let updateSubscriptionStorage: SubscriptionStorage<ObjectsEvent, Void>.UpdateSubscriptionStorage = { action in
-                updateSelfLater { mutableState in
-                    action(&mutableState.internalObjectsEventSubscriptionStorage)
-                }
-            }
-
-            let subscription = internalObjectsEventSubscriptionStorage.subscribe(
+        internal func nosync_onInternal(event: ObjectsEvent, callback: @escaping ObjectsEventCallback) -> any OnObjectsEventResponse {
+            let subscription = internalObjectsEventSubscriptionStorage.nosync_subscribe(
                 listener: { _, subscriptionInCallback in
                     let response = ObjectsEventResponse(subscription: subscriptionInCallback)
                     callback(response)
                 },
                 eventName: event,
-                updateSelfLater: updateSubscriptionStorage,
             )
 
             return ObjectsEventResponse(subscription: subscription)
@@ -774,13 +750,13 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
             }
         }
 
-        internal mutating func offAll() {
-            objectsEventSubscriptionStorage.unsubscribeAll()
+        internal func nosync_offAll() {
+            objectsEventSubscriptionStorage.nosync_unsubscribeAll()
         }
 
-        internal func emitObjectsEvent(_ event: ObjectsEvent, on queue: DispatchQueue) {
-            objectsEventSubscriptionStorage.emit(eventName: event, on: queue)
-            internalObjectsEventSubscriptionStorage.emit(eventName: event, on: queue)
+        internal func nosync_emitObjectsEvent(_ event: ObjectsEvent, on queue: DispatchQueue) {
+            objectsEventSubscriptionStorage.nosync_emit(eventName: event, on: queue)
+            internalObjectsEventSubscriptionStorage.nosync_emit(eventName: event, on: queue)
         }
     }
 }

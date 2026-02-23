@@ -52,7 +52,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
     ) {
         mutableStateMutex = .init(
             dispatchQueue: internalQueue,
-            initialValue: .init(liveObjectMutableState: .init(objectID: objectID), data: data),
+            initialValue: .init(liveObjectMutableState: .init(objectID: objectID, internalQueue: internalQueue), data: data),
         )
         self.logger = logger
         self.userCallbackQueue = userCallbackQueue
@@ -142,44 +142,26 @@ internal final class InternalDefaultLiveCounter: Sendable {
     @discardableResult
     internal func subscribe(listener: @escaping LiveObjectUpdateCallback<DefaultLiveCounterUpdate>, coreSDK: CoreSDK) throws(ARTErrorInfo) -> any SubscribeResponse {
         try mutableStateMutex.withSync { mutableState throws(ARTErrorInfo) in
-            // swiftlint:disable:next trailing_closure
-            try mutableState.liveObjectMutableState.nosync_subscribe(listener: listener, coreSDK: coreSDK, updateSelfLater: { [weak self] action in
-                guard let self else {
-                    return
-                }
-
-                mutableStateMutex.withSync { mutableState in
-                    action(&mutableState.liveObjectMutableState)
-                }
-            })
+            try mutableState.liveObjectMutableState.nosync_subscribe(listener: listener, coreSDK: coreSDK)
         }
     }
 
     internal func unsubscribeAll() {
         mutableStateMutex.withSync { mutableState in
-            mutableState.liveObjectMutableState.unsubscribeAll()
+            mutableState.liveObjectMutableState.nosync_unsubscribeAll()
         }
     }
 
     @discardableResult
     internal func on(event: LiveObjectLifecycleEvent, callback: @escaping LiveObjectLifecycleEventCallback) -> any OnLiveObjectLifecycleEventResponse {
         mutableStateMutex.withSync { mutableState in
-            // swiftlint:disable:next trailing_closure
-            mutableState.liveObjectMutableState.on(event: event, callback: callback, updateSelfLater: { [weak self] action in
-                guard let self else {
-                    return
-                }
-
-                mutableStateMutex.withSync { mutableState in
-                    action(&mutableState.liveObjectMutableState)
-                }
-            })
+            mutableState.liveObjectMutableState.nosync_on(event: event, callback: callback)
         }
     }
 
     internal func offAll() {
         mutableStateMutex.withSync { mutableState in
-            mutableState.liveObjectMutableState.offAll()
+            mutableState.liveObjectMutableState.nosync_offAll()
         }
     }
 
@@ -190,7 +172,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
     /// This is used to instruct this counter to emit updates during an `OBJECT_SYNC`.
     internal func nosync_emit(_ update: LiveObjectUpdate<DefaultLiveCounterUpdate>) {
         mutableStateMutex.withoutSync { mutableState in
-            mutableState.liveObjectMutableState.emit(update, on: userCallbackQueue)
+            mutableState.liveObjectMutableState.nosync_emit(update, on: userCallbackQueue)
         }
     }
 
@@ -404,12 +386,12 @@ internal final class InternalDefaultLiveCounter: Sendable {
                     logger: logger,
                 )
                 // RTLC7d1a
-                liveObjectMutableState.emit(update, on: userCallbackQueue)
+                liveObjectMutableState.nosync_emit(update, on: userCallbackQueue)
             case .known(.counterInc):
                 // RTLC7d2
                 let update = applyCounterIncOperation(operation.counterOp)
                 // RTLC7d2a
-                liveObjectMutableState.emit(update, on: userCallbackQueue)
+                liveObjectMutableState.nosync_emit(update, on: userCallbackQueue)
             case .known(.objectDelete):
                 let dataBeforeApplyingOperation = data
 
@@ -422,7 +404,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
                 )
 
                 // RTLC7d4a
-                liveObjectMutableState.emit(.update(.init(amount: -dataBeforeApplyingOperation)), on: userCallbackQueue)
+                liveObjectMutableState.nosync_emit(.update(.init(amount: -dataBeforeApplyingOperation)), on: userCallbackQueue)
             default:
                 // RTLC7d3
                 logger.log("Operation \(operation) has unsupported action for LiveCounter; discarding", level: .warn)
