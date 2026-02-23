@@ -594,51 +594,21 @@ private struct ObjectsIntegrationTests {
                         let root = ctx.root
                         let objects = ctx.objects
 
-                        // Create the promise first, before the operations that will trigger it
-                        let objectsCreatedPromiseUpdates1 = try root.updates()
-                        let objectsCreatedPromiseUpdates2 = try root.updates()
-                        async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            group.addTask {
-                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, "counter")
-                            }
-                            group.addTask {
-                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, "map")
-                            }
-                            while try await group.next() != nil {}
-                        }
-
                         // MAP_CREATE
                         let map = try await objects.createMap(entries: ["shouldStay": "foo", "shouldDelete": "bar"])
                         // COUNTER_CREATE
                         let counter = try await objects.createCounter(count: 1)
 
-                        // Set the values and await the promise
+                        // Set the values
                         async let setMapPromise: Void = root.set(key: "map", value: .liveMap(map))
                         async let setCounterPromise: Void = root.set(key: "counter", value: .liveCounter(counter))
-                        _ = try await (setMapPromise, setCounterPromise, objectsCreatedPromise)
+                        _ = try await (setMapPromise, setCounterPromise)
 
-                        // Create the promise first, before the operations that will trigger it
-                        let operationsAppliedPromiseUpdates1 = try map.updates()
-                        let operationsAppliedPromiseUpdates2 = try map.updates()
-                        let operationsAppliedPromiseUpdates3 = try counter.updates()
-                        async let operationsAppliedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            group.addTask {
-                                await waitForMapKeyUpdate(operationsAppliedPromiseUpdates1, "anotherKey")
-                            }
-                            group.addTask {
-                                await waitForMapKeyUpdate(operationsAppliedPromiseUpdates2, "shouldDelete")
-                            }
-                            group.addTask {
-                                await waitForCounterUpdate(operationsAppliedPromiseUpdates3)
-                            }
-                            while try await group.next() != nil {}
-                        }
-
-                        // Perform the operations and await the promise
+                        // Perform the operations
                         async let setAnotherKeyPromise: Void = map.set(key: "anotherKey", value: "baz")
                         async let removeKeyPromise: Void = map.remove(key: "shouldDelete")
                         async let incrementPromise: Void = counter.increment(amount: 10)
-                        _ = try await (setAnotherKeyPromise, removeKeyPromise, incrementPromise, operationsAppliedPromise)
+                        _ = try await (setAnotherKeyPromise, removeKeyPromise, incrementPromise)
 
                         // create a new client and check it syncs with the aggregated data
                         let client2 = try await realtimeWithObjects(options: ctx.clientOptions)
@@ -671,26 +641,13 @@ private struct ObjectsIntegrationTests {
                         let channel = ctx.channel
                         let client = ctx.client
 
-                        // Create the promise first, before the operations that will trigger it
-                        let objectsCreatedPromiseUpdates1 = try root.updates()
-                        let objectsCreatedPromiseUpdates2 = try root.updates()
-                        async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            group.addTask {
-                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, "counter")
-                            }
-                            group.addTask {
-                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, "map")
-                            }
-                            while try await group.next() != nil {}
-                        }
-
                         let map = try await objects.createMap()
                         let counter = try await objects.createCounter()
 
-                        // Set the values and await the promise
+                        // Set the values
                         async let setMapPromise: Void = root.set(key: "map", value: .liveMap(map))
                         async let setCounterPromise: Void = root.set(key: "counter", value: .liveCounter(counter))
-                        _ = try await (setMapPromise, setCounterPromise, objectsCreatedPromise)
+                        _ = try await (setMapPromise, setCounterPromise)
 
                         try await channel.detachAsync()
 
@@ -1397,12 +1354,8 @@ private struct ObjectsIntegrationTests {
                         for (i, increment) in increments.enumerated() {
                             expectedCounterValue += Double(increment)
 
-                            let counterUpdatedPromiseUpdates = try counter.updates()
-                            async let counterUpdatedPromise: Void = waitForCounterUpdate(counterUpdatedPromiseUpdates)
-
                             // Use the public API to increment - this will send COUNTER_INC internally
                             try await counter.increment(amount: Double(increment))
-                            _ = await counterUpdatedPromise
 
                             #expect(try counter.value == expectedCounterValue, "Check counter at \"\(counterKey)\" key in root has correct value after \(i + 1) COUNTER_INC ops")
                         }
@@ -1497,12 +1450,8 @@ private struct ObjectsIntegrationTests {
                         #expect(try #require(map.get(key: "shouldStay")?.stringValue) == "foo", "Check map at \"\(mapKey)\" key in root has correct \"shouldStay\" value before MAP_REMOVE")
                         #expect(try #require(map.get(key: "shouldDelete")?.stringValue) == "bar", "Check map at \"\(mapKey)\" key in root has correct \"shouldDelete\" value before MAP_REMOVE")
 
-                        let keyRemovedPromiseUpdates = try map.updates()
-                        async let keyRemovedPromise: Void = waitForMapKeyUpdate(keyRemovedPromiseUpdates, "shouldDelete")
-
                         // Send MAP_REMOVE op using the public API
                         try await map.remove(key: "shouldDelete")
-                        _ = await keyRemovedPromise
 
                         // Check map has correct keys after MAP_REMOVE ops
                         #expect(try map.size == 1, "Check map at \"\(mapKey)\" key in root has correct number of keys after MAP_REMOVE")
@@ -2578,11 +2527,7 @@ private struct ObjectsIntegrationTests {
                         for (i, increment) in increments.enumerated() {
                             expectedCounterValue += increment
 
-                            let counterUpdatedPromiseUpdates = try counter.updates()
-                            async let counterUpdatedPromise: Void = waitForCounterUpdate(counterUpdatedPromiseUpdates)
-
                             try await counter.increment(amount: increment)
-                            _ = await counterUpdatedPromise
 
                             #expect(try counter.value == expectedCounterValue, "Check counter has correct value after \(i + 1) LiveCounter.increment calls")
                         }
@@ -2662,11 +2607,7 @@ private struct ObjectsIntegrationTests {
                         for (i, decrement) in decrements.enumerated() {
                             expectedCounterValue -= decrement
 
-                            let counterUpdatedPromiseUpdates = try counter.updates()
-                            async let counterUpdatedPromise: Void = waitForCounterUpdate(counterUpdatedPromiseUpdates)
-
                             try await counter.decrement(amount: decrement)
-                            _ = await counterUpdatedPromise
 
                             #expect(try counter.value == expectedCounterValue, "Check counter has correct value after \(i + 1) LiveCounter.decrement calls")
                         }
@@ -2716,16 +2657,6 @@ private struct ObjectsIntegrationTests {
                     action: { ctx in
                         let root = ctx.root
 
-                        let keysUpdatedPromiseUpdates = try primitiveKeyData.map { _ in try root.updates() }
-                        async let keysUpdatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            for (i, keyData) in primitiveKeyData.enumerated() {
-                                group.addTask {
-                                    await waitForMapKeyUpdate(keysUpdatedPromiseUpdates[i], keyData.key)
-                                }
-                            }
-                            while try await group.next() != nil {}
-                        }
-
                         _ = try await withThrowingTaskGroup(of: Void.self) { group in
                             for keyData in primitiveKeyData {
                                 group.addTask {
@@ -2734,7 +2665,6 @@ private struct ObjectsIntegrationTests {
                             }
                             while try await group.next() != nil {}
                         }
-                        _ = try await keysUpdatedPromise
 
                         // Check everything is applied correctly
                         for keyData in primitiveKeyData {
@@ -2797,21 +2727,9 @@ private struct ObjectsIntegrationTests {
                         let counter = try #require(root.get(key: "counter")?.liveCounterValue)
                         let map = try #require(root.get(key: "map")?.liveMapValue)
 
-                        let keysUpdatedPromiseUpdates1 = try root.updates()
-                        let keysUpdatedPromiseUpdates2 = try root.updates()
-                        async let keysUpdatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            group.addTask {
-                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates1, "counter2")
-                            }
-                            group.addTask {
-                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates2, "map2")
-                            }
-                            while try await group.next() != nil {}
-                        }
-
                         async let setCounter2Promise: Void = root.set(key: "counter2", value: .liveCounter(counter))
                         async let setMap2Promise: Void = root.set(key: "map2", value: .liveMap(map))
-                        _ = try await (setCounter2Promise, setMap2Promise, keysUpdatedPromise)
+                        _ = try await (setCounter2Promise, setMap2Promise)
 
                         let counter2 = try #require(root.get(key: "counter2")?.liveCounterValue)
                         let map2 = try #require(root.get(key: "map2")?.liveMapValue)
@@ -2879,21 +2797,9 @@ private struct ObjectsIntegrationTests {
 
                         let map = try #require(root.get(key: "map")?.liveMapValue)
 
-                        let keysUpdatedPromiseUpdates1 = try map.updates()
-                        let keysUpdatedPromiseUpdates2 = try map.updates()
-                        async let keysUpdatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            group.addTask {
-                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates1, "foo")
-                            }
-                            group.addTask {
-                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates2, "bar")
-                            }
-                            while try await group.next() != nil {}
-                        }
-
                         async let removeFooPromise: Void = map.remove(key: "foo")
                         async let removeBarPromise: Void = map.remove(key: "bar")
-                        _ = try await (removeFooPromise, removeBarPromise, keysUpdatedPromise)
+                        _ = try await (removeFooPromise, removeBarPromise)
 
                         #expect(try map.get(key: "foo") == nil, "Check can remove a key from a root via a LiveMap.remove call")
                         #expect(try map.get(key: "bar") == nil, "Check can remove a key from a root via a LiveMap.remove call")
