@@ -4171,6 +4171,517 @@ private struct ObjectsIntegrationTests {
             )
         }
     }
+
+    // MARK: - Apply on ACK tests
+
+    // MARK: Group 1: Operations applied locally on ACK (parameterized)
+
+    enum ApplyOnAckScenarios: Scenarios {
+        struct Context {
+            var objects: any RealtimeObjects
+            var root: any LiveMap
+            var objectsHelper: ObjectsHelper
+            var channelName: String
+            var channel: ARTRealtimeChannel
+            var client: ARTRealtime
+        }
+
+        static let scenarios: [TestScenario<Context>] = [
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "creating a LiveCounter applies immediately on ACK",
+                action: { ctx in
+                    let echoInterceptor = EchoInterceptor(client: ctx.client, channel: ctx.channel)
+                    defer { echoInterceptor.restore() }
+
+                    let counter = try await ctx.objects.createCounter(count: 42)
+                    try await ctx.root.set(key: "newCounter", value: .liveCounter(counter))
+
+                    // Value should be visible immediately via apply-on-ACK, not from echo
+                    #expect(try counter.value == 42, "Check counter value is applied immediately on ACK")
+
+                    // Verify echo was held (proving value didn't come from echo)
+                    #expect(!echoInterceptor.heldEchoes.isEmpty, "Check echo was intercepted")
+                },
+            ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "LiveCounter.increment applies operation immediately on ACK",
+                action: { ctx in
+                    let counter = try await ctx.objects.createCounter(count: 10)
+                    try await ctx.root.set(key: "counter", value: .liveCounter(counter))
+
+                    let echoInterceptor = EchoInterceptor(client: ctx.client, channel: ctx.channel)
+                    defer { echoInterceptor.restore() }
+
+                    try await counter.increment(amount: 5)
+
+                    #expect(try counter.value == 15, "Check counter value reflects increment applied on ACK")
+                    #expect(!echoInterceptor.heldEchoes.isEmpty, "Check echo was intercepted")
+                },
+            ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "creating a LiveMap applies immediately on ACK",
+                action: { ctx in
+                    let echoInterceptor = EchoInterceptor(client: ctx.client, channel: ctx.channel)
+                    defer { echoInterceptor.restore() }
+
+                    let map = try await ctx.objects.createMap(entries: ["foo": "bar"])
+                    try await ctx.root.set(key: "newMap", value: .liveMap(map))
+
+                    #expect(try #require(map.get(key: "foo")?.stringValue) == "bar", "Check map value is applied immediately on ACK")
+                    #expect(!echoInterceptor.heldEchoes.isEmpty, "Check echo was intercepted")
+                },
+            ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "LiveMap.set applies operation immediately on ACK",
+                action: { ctx in
+                    let echoInterceptor = EchoInterceptor(client: ctx.client, channel: ctx.channel)
+                    defer { echoInterceptor.restore() }
+
+                    try await ctx.root.set(key: "key", value: "value")
+
+                    #expect(try #require(ctx.root.get(key: "key")?.stringValue) == "value", "Check map set is applied immediately on ACK")
+                    #expect(!echoInterceptor.heldEchoes.isEmpty, "Check echo was intercepted")
+                },
+            ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "LiveMap.remove applies operation immediately on ACK",
+                action: { ctx in
+                    try await ctx.root.set(key: "keyToRemove", value: "value")
+
+                    let echoInterceptor = EchoInterceptor(client: ctx.client, channel: ctx.channel)
+                    defer { echoInterceptor.restore() }
+
+                    try await ctx.root.remove(key: "keyToRemove")
+
+                    #expect(try ctx.root.get(key: "keyToRemove") == nil, "Check map remove is applied immediately on ACK")
+                    #expect(!echoInterceptor.heldEchoes.isEmpty, "Check echo was intercepted")
+                },
+            ),
+        ]
+    }
+
+    @Test(arguments: ApplyOnAckScenarios.testCases)
+    func applyOnAckScenarios(testCase: TestCase<ApplyOnAckScenarios.Context>) async throws {
+        guard !testCase.disabled else {
+            withKnownIssue {
+                Issue.record("Test case is disabled")
+            }
+            return
+        }
+
+        let objectsHelper = try await ObjectsHelper()
+        let client = try await realtimeWithObjects(options: testCase.options)
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channel = client.channels.get(testCase.channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            try await testCase.scenario.action(
+                .init(
+                    objects: objects,
+                    root: root,
+                    objectsHelper: objectsHelper,
+                    channelName: testCase.channelName,
+                    channel: channel,
+                    client: client,
+                ),
+            )
+        }
+    }
+
+    // MARK: Group 2: Does not double-apply
+
+    @Test
+    func echoAfterAckDoesNotDoubleApply() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "echoAfterAckDoesNotDoubleApply"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create a counter with initial value 10
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            // Set up echo interceptor
+            let echoInterceptor = EchoInterceptor(client: client, channel: channel)
+            defer { echoInterceptor.restore() }
+
+            // Increment by 5 — applied via ACK, echo held
+            try await counter.increment(amount: 5)
+            #expect(try counter.value == 15, "Check counter value after increment applied on ACK")
+
+            // Release the held echo
+            await echoInterceptor.releaseAll()
+
+            // Value should still be 15 (not 20 from double-apply)
+            #expect(try counter.value == 15, "Check counter value is not double-applied after echo")
+        }
+    }
+
+    @Test
+    func ackAfterEchoDoesNotDoubleApply() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "ackAfterEchoDoesNotDoubleApply"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create a counter with initial value 10
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            // Set up ACK interceptor (holds ACKs, lets echoes through)
+            let ackInterceptor = AckInterceptor(client: client)
+            defer { ackInterceptor.restore() }
+
+            // Start increment without awaiting (it won't complete until ACK arrives)
+            let incrementTask = Task {
+                try await counter.increment(amount: 5)
+            }
+
+            // Wait for echo to arrive and be applied
+            let counterUpdates = try counter.updates()
+            await waitForCounterUpdate(counterUpdates)
+
+            // Value should be 15 from the echo
+            #expect(try counter.value == 15, "Check counter value after echo received")
+
+            // Release the held ACK
+            ackInterceptor.releaseAll()
+
+            // Wait for increment to complete
+            try await incrementTask.value
+
+            // Value should still be 15 (not 20 from double-apply)
+            #expect(try counter.value == 15, "Check counter value is not double-applied after ACK")
+        }
+    }
+
+    // MARK: Group 3: Does not incorrectly skip operations
+
+    @Test
+    func applyOnAckDoesNotUpdateSiteTimeserials() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "applyOnAckDoesNotUpdateSiteTimeserials"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+            let objectsHelper = try await ObjectsHelper()
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Step 1: Set up echo interceptor
+            let echoInterceptor = EchoInterceptor(client: client, channel: channel)
+            defer { echoInterceptor.restore() }
+
+            // Step 2: Create a counter with initial value 10 — echo held
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            // Step 3: Wait for the echo, extract COUNTER_CREATE serial and siteCode
+            await echoInterceptor.waitForEcho()
+            let heldEchoes = echoInterceptor.heldEchoes
+            // Find the echo containing COUNTER_CREATE
+            let createEcho = heldEchoes.last!
+            let stateItems = createEcho.testsOnly_inboundObjectMessages
+            let counterCreate = try #require(stateItems.first { $0.operation?.action == .known(.counterCreate) })
+            let counterCreateSerial = try #require(counterCreate.serial)
+            let counterCreateSiteCode = try #require(counterCreate.siteCode)
+
+            // Step 4: Release the create echo (so siteTimeserials gets set)
+            await echoInterceptor.releaseAll()
+
+            // Step 5: Increment by 5 — applies via ACK, echo held
+            try await counter.increment(amount: 5)
+            #expect(try counter.value == 15, "Check counter value after increment applied on ACK")
+
+            // Step 6: Wait for the increment echo, extract its serial
+            await echoInterceptor.waitForEcho()
+            let incrementEchoes = echoInterceptor.heldEchoes
+            let incrementEcho = incrementEchoes.last!
+            let incrementStateItems = incrementEcho.testsOnly_inboundObjectMessages
+            let incrementOp = try #require(incrementStateItems.first { $0.operation?.action == .known(.counterInc) })
+            let _incrementSerial = try #require(incrementOp.serial)
+
+            // Step 7: Construct injectedSerial = counterCreateSerial + "a"
+            // This serial is between create and increment, so if siteTimeserials were
+            // updated by apply-on-ACK, this operation would be rejected
+            let injectedSerial = counterCreateSerial + "a"
+
+            // Step 8: Inject a COUNTER_INC operation with injectedSerial
+            let internalCounter = try #require(counter as? PublicDefaultLiveCounter)
+            let counterId = internalCounter.proxied.testsOnly_objectID
+            await objectsHelper.processObjectOperationMessageOnChannel(
+                channel: channel,
+                serial: injectedSerial,
+                siteCode: counterCreateSiteCode,
+                state: [objectsHelper.counterIncOp(objectId: counterId, amount: 100)],
+            )
+
+            // Step 9: Assert counter.value == 115
+            // If siteTimeserials had been updated by apply-on-ACK, the injected operation
+            // would have been rejected, and counter would be 15
+            #expect(try counter.value == 115, "Check injected operation was applied (proving siteTimeserials not updated by apply-on-ACK)")
+        }
+    }
+
+    // MARK: Group 4: ACKs buffered during OBJECT_SYNC
+
+    @Test
+    func operationBufferedDuringSyncIsAppliedAfterSyncCompletes() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "operationBufferedDuringSyncApplied"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+            let objectsHelper = try await ObjectsHelper()
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create counter with value 10
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+            #expect(try counter.value == 10, "Check counter initial value")
+
+            let internalCounter = try #require(counter as? PublicDefaultLiveCounter)
+            let counterId = internalCounter.proxied.testsOnly_objectID
+
+            // Inject ATTACHED with HAS_OBJECTS to trigger SYNCING state
+            await injectAttachedMessage(channel: channel, hasObjects: true)
+
+            // Increment while syncing — ACK will be buffered
+            try await counter.increment(amount: 5)
+
+            // Complete the sync sequence with an OBJECT_SYNC message containing counter=10
+            await objectsHelper.processObjectStateMessageOnChannel(
+                channel: channel,
+                syncSerial: "cursor_end",
+                state: [
+                    objectsHelper.counterObject(
+                        objectId: counterId,
+                        siteTimeserials: [:],
+                        materialisedCount: 10,
+                    ),
+                ],
+            )
+
+            // After sync completes, the buffered ACK should be applied
+            #expect(try counter.value == 15, "Check counter value after sync completes with buffered ACK applied")
+        }
+    }
+
+    @Test
+    func appliedOnAckSerialsIsClearedOnSync() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "appliedOnAckSerialsCleared"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+            let objectsHelper = try await ObjectsHelper()
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create counter and increment via apply-on-ACK (echo held)
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            let echoInterceptor = EchoInterceptor(client: client, channel: channel)
+
+            try await counter.increment(amount: 5)
+            #expect(try counter.value == 15, "Check counter value after increment on ACK")
+
+            let internalCounter = try #require(counter as? PublicDefaultLiveCounter)
+            let counterId = internalCounter.proxied.testsOnly_objectID
+
+            // Inject ATTACHED+HAS_OBJECTS to trigger sync
+            await injectAttachedMessage(channel: channel, hasObjects: true)
+
+            // Complete OBJECT_SYNC with a fake siteCode (counter=10)
+            await objectsHelper.processObjectStateMessageOnChannel(
+                channel: channel,
+                syncSerial: "cursor_end",
+                state: [
+                    objectsHelper.counterObject(
+                        objectId: counterId,
+                        siteTimeserials: ["fakeSite": lexicoTimeserial(seriesId: "fakeSite", timestamp: 0, counter: 0)],
+                        materialisedCount: 10,
+                    ),
+                ],
+            )
+
+            // After sync, value should be 10 (from sync state, appliedOnAckSerials cleared)
+            #expect(try counter.value == 10, "Check counter value is reset to sync state")
+
+            // Release the held echo — should be applied because appliedOnAckSerials was cleared
+            await echoInterceptor.releaseAll()
+            echoInterceptor.restore()
+
+            #expect(try counter.value == 15, "Check counter value after releasing echo (proving appliedOnAckSerials was cleared on sync)")
+        }
+    }
+
+    @Test(arguments: [
+        ARTRealtimeChannelState.detached,
+        ARTRealtimeChannelState.suspended,
+        ARTRealtimeChannelState.failed,
+    ])
+    func publishAndApplyRejectsOnChannelStateChangeDuringSync(targetState: ARTRealtimeChannelState) async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "publishAndApplyRejects_\(targetState.rawValue)"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create a counter
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            // Inject ATTACHED+HAS_OBJECTS to trigger SYNCING state
+            await injectAttachedMessage(channel: channel, hasObjects: true)
+
+            // Set up ACK interceptor and start increment
+            let ackInterceptor = AckInterceptor(client: client)
+
+            let incrementTask = Task {
+                try await counter.increment(amount: 5)
+            }
+
+            // Wait for the ACK to arrive
+            await ackInterceptor.waitForAck()
+
+            // Release ACK so publishAndApply proceeds to sync-wait
+            ackInterceptor.releaseAll()
+            ackInterceptor.restore()
+
+            // Yield to allow processing
+            await Task.yield()
+            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+
+            // Trigger channel state change
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                channel.internal.queue.async {
+                    switch targetState {
+                    case .suspended:
+                        let params = ChannelStateChangeParams(state: .ok)
+                        channel.internal.setSuspended(params)
+                    case .failed:
+                        let params = ChannelStateChangeParams(state: .ok)
+                        channel.internal.setFailed(params)
+                    case .detached:
+                        let msg = ARTProtocolMessage()
+                        msg.action = .detached
+                        msg.channel = channel.name
+                        channel.internal.setDetached(msg)
+                    default:
+                        break
+                    }
+                    continuation.resume()
+                }
+            }
+
+            // The increment should throw with error 92008
+            do {
+                try await incrementTask.value
+                Issue.record("Expected increment to throw during channel state change")
+            } catch let error as ARTErrorInfo {
+                #expect(error.code == 92008, "Check error code is 92008 for publishAndApply rejected during sync")
+            }
+        }
+    }
+
+    // MARK: Group 5: Subscription events
+
+    @Test
+    func subscriptionCallbacksFireForBothLocallyAppliedAndRealtimeReceivedOperations() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "subscriptionCallbacksApplyOnAck"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+            let objectsHelper = try await ObjectsHelper()
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create counter
+            let counter = try await objects.createCounter(count: 0)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            // Subscribe to counter updates
+            let counterUpdates = try counter.updates()
+
+            // Set up echo interceptor
+            let echoInterceptor = EchoInterceptor(client: client, channel: channel)
+
+            // Perform increment via SDK — applied locally on ACK with echoes held
+            try await counter.increment(amount: 5)
+            #expect(try counter.value == 5, "Check counter value after local increment")
+
+            // The subscription should have fired immediately from the ACK path
+            // Collect the event
+            var receivedEvents: [LiveCounterUpdate] = []
+            if let event = await counterUpdates.first(where: { _ in true }) {
+                receivedEvents.append(event)
+            }
+
+            #expect(receivedEvents.count == 1, "Check 1 subscription event received after local increment")
+
+            // Restore echo handling
+            echoInterceptor.restore()
+
+            // Release held echoes (shouldn't cause another event since already applied)
+            await echoInterceptor.releaseAll()
+
+            // Trigger another increment via REST — this is received over Realtime
+            let internalCounter = try #require(counter as? PublicDefaultLiveCounter)
+            let counterId = internalCounter.proxied.testsOnly_objectID
+            _ = try await objectsHelper.operationRequest(
+                channelName: channelName,
+                opBody: objectsHelper.counterIncRestOp(objectId: counterId, number: 10),
+            )
+
+            // Wait for counter update from Realtime
+            if let event = await counterUpdates.first(where: { _ in true }) {
+                receivedEvents.append(event)
+            }
+
+            #expect(receivedEvents.count == 2, "Check 2 subscription events received total")
+            #expect(try counter.value == 15, "Check final counter value after both operations")
+        }
+    }
 }
 
 // swiftlint:enable trailing_closure
