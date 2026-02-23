@@ -1,3 +1,4 @@
+@preconcurrency import Ably.Private
 import Ably
 @testable import AblyLiveObjects
 import Testing
@@ -125,6 +126,25 @@ func waitForObjectSync(_ realtime: ARTRealtime) async throws {
     }
 }
 
+// MARK: - ARTProtocolMessage test-only extension
+
+extension ARTProtocolMessage {
+    /// Test-only: extract InboundObjectMessages from the protocol message's state array.
+    ///
+    /// The `state` property on `ARTProtocolMessage` is behind `#ifdef ABLY_SUPPORTS_PLUGINS`
+    /// in a private header, so it's not visible to Swift consumers. We use KVC to access it.
+    var testsOnly_inboundObjectMessages: [InboundObjectMessage] {
+        guard let stateArray = value(forKey: "state") as? [AnyObject] else {
+            return []
+        }
+        return stateArray.compactMap { item -> InboundObjectMessage? in
+            guard let box = item as? DefaultInternalPlugin.ObjectMessageBox<InboundObjectMessage>
+            else { return nil }
+            return box.objectMessage
+        }
+    }
+}
+
 // MARK: - Echo/ACK interceptors for apply-on-ACK tests
 
 /// Intercepts OBJECT echo messages (action 19) arriving from Realtime, holding them so tests can
@@ -159,7 +179,8 @@ private final class EchoInterceptor: @unchecked Sendable {
         }
     }
 
-    /// Waits until at least one echo has been intercepted.
+    /// Waits until at least one new echo has been intercepted since the last
+    /// ``releaseAll()`` / ``releaseFirst()`` (or since construction).
     func waitForEcho() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             lock.withLock {
@@ -169,6 +190,23 @@ private final class EchoInterceptor: @unchecked Sendable {
                     echoContinuation = continuation
                 }
             }
+        }
+    }
+
+    /// Waits until at least `count` echoes have been intercepted.
+    func waitForEchoCount(_ count: Int) async {
+        while true {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                lock.withLock {
+                    if _heldEchoes.count >= count {
+                        continuation.resume()
+                    } else {
+                        echoContinuation = continuation
+                    }
+                }
+            }
+            let current = lock.withLock { _heldEchoes.count }
+            if current >= count { break }
         }
     }
 
@@ -213,6 +251,7 @@ private final class EchoInterceptor: @unchecked Sendable {
 /// the timing of ACK delivery. Uses `setBeforeIncomingMessageModifier` on `TestProxyTransport`.
 private final class AckInterceptor: @unchecked Sendable {
     private let transport: TestProxyTransport
+    private let client: ARTRealtime
     private let lock = NSLock()
     private var _heldAcks: [ARTProtocolMessage] = []
     private var ackContinuation: CheckedContinuation<Void, Never>?
@@ -222,6 +261,7 @@ private final class AckInterceptor: @unchecked Sendable {
     }
 
     init(client: ARTRealtime) {
+        self.client = client
         self.transport = client.internal.transport as! TestProxyTransport
 
         transport.setBeforeIncomingMessageModifier { [weak self] message in
@@ -252,29 +292,35 @@ private final class AckInterceptor: @unchecked Sendable {
     }
 
     /// Releases all held ACK messages by feeding them back through the transport's receive method.
-    func releaseAll() {
+    /// Must be called from outside the internal queue (dispatches onto it).
+    func releaseAll() async {
         let acks = lock.withLock {
             let a = _heldAcks
             _heldAcks.removeAll()
             return a
         }
-        // Temporarily clear the modifier so we can replay without re-intercepting
-        transport.setBeforeIncomingMessageModifier(nil)
-        for ack in acks {
-            transport.receive(ack)
-        }
-        // Restore the interceptor
-        transport.setBeforeIncomingMessageModifier { [weak self] message in
-            guard let self else { return message }
-            if message.action == .ack {
-                lock.withLock {
-                    _heldAcks.append(message)
-                    ackContinuation?.resume()
-                    ackContinuation = nil
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            client.internal.queue.async {
+                // Temporarily clear the modifier so we can replay without re-intercepting
+                self.transport.setBeforeIncomingMessageModifier(nil)
+                for ack in acks {
+                    self.transport.receive(ack)
                 }
-                return nil
+                // Restore the interceptor
+                self.transport.setBeforeIncomingMessageModifier { [weak self] message in
+                    guard let self else { return message }
+                    if message.action == .ack {
+                        self.lock.withLock {
+                            self._heldAcks.append(message)
+                            self.ackContinuation?.resume()
+                            self.ackContinuation = nil
+                        }
+                        return nil
+                    }
+                    return message
+                }
+                continuation.resume()
             }
-            return message
         }
     }
 
@@ -2901,9 +2947,11 @@ private struct ObjectsIntegrationTests {
                     action: { ctx in
                         let objects = ctx.objects
 
-                        // prevent publishing of ops to realtime so we guarantee that the initial value doesn't come from a CREATE op
+                        // prevent publishing of ops to realtime so we guarantee that the initial value comes from local apply-on-ACK, not from a server echo
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in PublishResult(serials: []) })
+                        internallyTypedObjects.testsOnly_overridePublish(with: { objectMessages in
+                            PublishResult(serials: objectMessages.map { _ in "fake-serial" })
+                        })
 
                         let counter = try await objects.createCounter(count: 1)
                         #expect(try counter.value == 1, "Check counter has expected initial value")
@@ -2938,13 +2986,15 @@ private struct ObjectsIntegrationTests {
                             } catch {
                                 throw LiveObjectsError.other(error).toARTErrorInfo()
                             }
-                            return PublishResult(serials: [])
+                            return PublishResult(serials: objectMessages.map { _ in "fake-serial" })
                         })
 
                         let counter = try await objects.createCounter(count: 1)
 
-                        // Counter should be created with forged initial value instead of the actual one
-                        #expect(try counter.value == 10, "Check counter value has the expected initial value from a CREATE operation")
+                        // The injected CREATE op (value=10) is processed first in the override.
+                        // Then publishAndApply's local CREATE (value=1) is rejected as a duplicate
+                        // COUNTER_CREATE. So the counter retains the injected op's value.
+                        #expect(try counter.value == 10, "Check counter value has the expected initial value from the injected CREATE operation")
                         #expect(capturedCounterId != nil, "Check that Objects.publish was called with counter ID")
                     },
                 ),
@@ -2959,12 +3009,12 @@ private struct ObjectsIntegrationTests {
 
                         // Prevent publishing of ops to realtime so we can guarantee order of operations
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in
-                            // Do nothing - prevent publishing
-                            return PublishResult(serials: [])
+                        internallyTypedObjects.testsOnly_overridePublish(with: { objectMessages in
+                            // Prevent publishing to realtime but return serials so apply-on-ACK works
+                            return PublishResult(serials: objectMessages.map { _ in "fake-serial" })
                         })
 
-                        // Create counter locally, should have an initial value set
+                        // Create counter locally via apply-on-ACK
                         let counter = try await objects.createCounter(count: 1)
                         let internalCounter = try #require(counter as? PublicDefaultLiveCounter)
                         let counterId = internalCounter.proxied.testsOnly_objectID
@@ -3150,9 +3200,11 @@ private struct ObjectsIntegrationTests {
                         let objects = ctx.objects
 
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in PublishResult(serials: []) })
+                        internallyTypedObjects.testsOnly_overridePublish(with: { objectMessages in
+                            PublishResult(serials: objectMessages.map { _ in "fake-serial" })
+                        })
 
-                        // prevent publishing of ops to realtime so we guarantee that the initial value doesn't come from a CREATE op
+                        // prevent publishing of ops to realtime so we guarantee that the initial value comes from local apply-on-ACK
                         let map = try await objects.createMap(entries: ["foo": "bar"])
                         #expect(try #require(map.get(key: "foo")?.stringValue) == "bar", "Check map has expected initial value")
                     },
@@ -3196,14 +3248,16 @@ private struct ObjectsIntegrationTests {
                             } catch {
                                 throw LiveObjectsError.other(error).toARTErrorInfo()
                             }
-                            return PublishResult(serials: [])
+                            return PublishResult(serials: objectMessages.map { _ in "fake-serial" })
                         })
 
                         let map = try await objects.createMap(entries: ["foo": "bar"])
 
-                        // Map should be created with forged initial value instead of the actual one
+                        // The injected CREATE op (with entry "baz") is processed first in the override.
+                        // Then publishAndApply's local CREATE (with entry "foo") is rejected as a duplicate
+                        // MAP_CREATE. So the map retains the injected op's entries.
                         #expect(try map.get(key: "foo") == nil, "Check key \"foo\" was not set on a map client-side")
-                        #expect(try #require(map.get(key: "baz")?.stringValue) == "qux", "Check key \"baz\" was set on a map from a CREATE operation after object creation")
+                        #expect(try #require(map.get(key: "baz")?.stringValue) == "qux", "Check key \"baz\" was set on a map from the injected CREATE operation")
                         #expect(capturedMapId != nil, "Check that Objects.publish was called with map ID")
                     },
                 ),
@@ -3216,14 +3270,13 @@ private struct ObjectsIntegrationTests {
                         let objectsHelper = ctx.objectsHelper
                         let channel = ctx.channel
 
-                        // Prevent publishing of ops to realtime so we can guarantee order of operations
+                        // Prevent publishing of ops to realtime but return serials so apply-on-ACK works
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in
-                            // Do nothing - prevent publishing
-                            return PublishResult(serials: [])
+                        internallyTypedObjects.testsOnly_overridePublish(with: { objectMessages in
+                            PublishResult(serials: objectMessages.map { _ in "fake-serial" })
                         })
 
-                        // Create map locally, should have an initial value set
+                        // Create map locally via apply-on-ACK
                         let map = try await objects.createMap(entries: ["foo": "bar"])
                         let internalMap = try #require(map as? PublicDefaultLiveMap)
                         let mapId = internalMap.proxied.testsOnly_objectID
@@ -4267,15 +4320,19 @@ private struct ObjectsIntegrationTests {
                 try await counter.increment(amount: 5)
             }
 
-            // Wait for echo to arrive and be applied
-            let counterUpdates = try counter.updates()
-            await waitForCounterUpdate(counterUpdates)
+            // Wait for the ACK to be intercepted — this confirms the server
+            // received and processed the message. The echo should arrive around
+            // the same time.
+            await ackInterceptor.waitForAck()
+
+            // Give time for the echo to be processed
+            try await Task.sleep(nanoseconds: 500_000_000)
 
             // Value should be 15 from the echo
             #expect(try counter.value == 15, "Check counter value after echo received")
 
-            // Release the held ACK
-            ackInterceptor.releaseAll()
+            // Release the held ACK (dispatches onto internal queue)
+            await ackInterceptor.releaseAll()
 
             // Wait for increment to complete
             try await incrementTask.value
@@ -4308,13 +4365,13 @@ private struct ObjectsIntegrationTests {
             let counter = try await objects.createCounter(count: 10)
             try await root.set(key: "counter", value: .liveCounter(counter))
 
-            // Step 3: Wait for the echo, extract COUNTER_CREATE serial and siteCode
-            await echoInterceptor.waitForEcho()
+            // Step 3: Wait for both echoes, extract COUNTER_CREATE serial and siteCode.
+            // createCounter + root.set generate two echoes (COUNTER_CREATE and MAP_SET);
+            // search all held echoes to find the COUNTER_CREATE.
+            await echoInterceptor.waitForEchoCount(2)
             let heldEchoes = echoInterceptor.heldEchoes
-            // Find the echo containing COUNTER_CREATE
-            let createEcho = heldEchoes.last!
-            let stateItems = createEcho.testsOnly_inboundObjectMessages
-            let counterCreate = try #require(stateItems.first { $0.operation?.action == .known(.counterCreate) })
+            let allStateItems = heldEchoes.flatMap { $0.testsOnly_inboundObjectMessages }
+            let counterCreate = try #require(allStateItems.first { $0.operation?.action == .known(.counterCreate) })
             let counterCreateSerial = try #require(counterCreate.serial)
             let counterCreateSiteCode = try #require(counterCreate.siteCode)
 
@@ -4331,7 +4388,7 @@ private struct ObjectsIntegrationTests {
             let incrementEcho = incrementEchoes.last!
             let incrementStateItems = incrementEcho.testsOnly_inboundObjectMessages
             let incrementOp = try #require(incrementStateItems.first { $0.operation?.action == .known(.counterInc) })
-            let _incrementSerial = try #require(incrementOp.serial)
+            _ = try #require(incrementOp.serial) // verify serial exists
 
             // Step 7: Construct injectedSerial = counterCreateSerial + "a"
             // This serial is between create and increment, so if siteTimeserials were
@@ -4381,13 +4438,20 @@ private struct ObjectsIntegrationTests {
             // Inject ATTACHED with HAS_OBJECTS to trigger SYNCING state
             await injectAttachedMessage(channel: channel, hasObjects: true)
 
-            // Increment while syncing — ACK will be buffered
-            try await counter.increment(amount: 5)
+            // Increment while syncing — don't await because publishAndApply will
+            // wait for sync to complete, and we need to complete the sync below.
+            let incrementTask = Task {
+                try await counter.increment(amount: 5)
+            }
+
+            // Give time for the ACK to be received and publishAndApply to enter
+            // the sync-wait before we complete the sync.
+            try await Task.sleep(nanoseconds: 2_000_000_000) // 2s
 
             // Complete the sync sequence with an OBJECT_SYNC message containing counter=10
             await objectsHelper.processObjectStateMessageOnChannel(
                 channel: channel,
-                syncSerial: "cursor_end",
+                syncSerial: "serial:",
                 state: [
                     objectsHelper.counterObject(
                         objectId: counterId,
@@ -4396,6 +4460,9 @@ private struct ObjectsIntegrationTests {
                     ),
                 ],
             )
+
+            // Wait for the increment task to complete
+            try await incrementTask.value
 
             // After sync completes, the buffered ACK should be applied
             #expect(try counter.value == 15, "Check counter value after sync completes with buffered ACK applied")
@@ -4433,7 +4500,7 @@ private struct ObjectsIntegrationTests {
             // Complete OBJECT_SYNC with a fake siteCode (counter=10)
             await objectsHelper.processObjectStateMessageOnChannel(
                 channel: channel,
-                syncSerial: "cursor_end",
+                syncSerial: "serial:",
                 state: [
                     objectsHelper.counterObject(
                         objectId: counterId,
@@ -4488,7 +4555,7 @@ private struct ObjectsIntegrationTests {
             await ackInterceptor.waitForAck()
 
             // Release ACK so publishAndApply proceeds to sync-wait
-            ackInterceptor.releaseAll()
+            await ackInterceptor.releaseAll()
             ackInterceptor.restore()
 
             // Yield to allow processing
@@ -4506,10 +4573,10 @@ private struct ObjectsIntegrationTests {
                         let params = ChannelStateChangeParams(state: .ok)
                         channel.internal.setFailed(params)
                     case .detached:
-                        let msg = ARTProtocolMessage()
-                        msg.action = .detached
-                        msg.channel = channel.name
-                        channel.internal.setDetached(msg)
+                        // Use detachChannel: directly instead of setDetached: because
+                        // setDetached: initiates a reattach when the channel is attached.
+                        let params = ChannelStateChangeParams(state: .ok)
+                        channel.internal.detachChannel(params)
                     default:
                         break
                     }

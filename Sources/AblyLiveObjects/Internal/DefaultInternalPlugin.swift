@@ -70,7 +70,7 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
     /// A class that wraps an object message.
     ///
     /// We need this intermediate type because we want object messages to be structs — because they're nicer to work with internally — but a struct can't conform to the class-bound `_AblyPluginSupportPrivate.ObjectMessageProtocol`.
-    fileprivate final class ObjectMessageBox<T>: _AblyPluginSupportPrivate.ObjectMessageProtocol where T: Sendable {
+    internal final class ObjectMessageBox<T>: _AblyPluginSupportPrivate.ObjectMessageProtocol where T: Sendable {
         internal let objectMessage: T
 
         init(objectMessage: T) {
@@ -219,9 +219,15 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
                         } else {
                             let serials: [String?]
                             if let publishResultProtocol {
-                                serials = publishResultProtocol.serials.map { serial in
-                                    serial.value
-                                }
+                                // Cast to concrete ARTPublishResult to work around a Swift
+                                // NSArray bridging crash. ARTPublishResultSerial's conformance
+                                // to PublishResultSerialProtocol is declared behind
+                                // #ifdef ABLY_SUPPORTS_PLUGINS in a private header, which is
+                                // not visible to Swift consumers, causing the typed array
+                                // bridge to crash at runtime.
+                                // swiftlint:disable:next force_cast
+                                let publishResult = publishResultProtocol as! ARTPublishResult
+                                serials = publishResult.serials.map(\.value)
                             } else {
                                 serials = []
                             }
@@ -252,16 +258,5 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
         }
 
         return connectionDetails.siteCode?()
-    }
-}
-
-extension ARTProtocolMessage {
-    /// Test-only: extract InboundObjectMessages from the protocol message's state.
-    internal var testsOnly_inboundObjectMessages: [InboundObjectMessage] {
-        (state ?? []).compactMap { item -> InboundObjectMessage? in
-            guard let box = item as? DefaultInternalPlugin.ObjectMessageBox<InboundObjectMessage>
-            else { return nil }
-            return box.objectMessage
-        }
     }
 }
