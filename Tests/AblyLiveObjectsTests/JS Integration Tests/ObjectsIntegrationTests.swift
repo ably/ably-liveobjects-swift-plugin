@@ -125,6 +125,180 @@ func waitForObjectSync(_ realtime: ARTRealtime) async throws {
     }
 }
 
+// MARK: - Echo/ACK interceptors for apply-on-ACK tests
+
+/// Intercepts OBJECT echo messages (action 19) arriving from Realtime, holding them so tests can
+/// verify that apply-on-ACK works independently of the echo. Uses `setBeforeIncomingMessageModifier`
+/// on `TestProxyTransport` to suppress OBJECT messages and store them for later replay.
+private final class EchoInterceptor: @unchecked Sendable {
+    private let transport: TestProxyTransport
+    private let channel: ARTRealtimeChannel
+    private let lock = NSLock()
+    private var _heldEchoes: [ARTProtocolMessage] = []
+    private var echoContinuation: CheckedContinuation<Void, Never>?
+
+    var heldEchoes: [ARTProtocolMessage] {
+        lock.withLock { _heldEchoes }
+    }
+
+    init(client: ARTRealtime, channel: ARTRealtimeChannel) {
+        self.transport = client.internal.transport as! TestProxyTransport
+        self.channel = channel
+
+        transport.setBeforeIncomingMessageModifier { [weak self] message in
+            guard let self else { return message }
+            if message.action == .object {
+                lock.withLock {
+                    _heldEchoes.append(message)
+                    echoContinuation?.resume()
+                    echoContinuation = nil
+                }
+                return nil // suppress the echo
+            }
+            return message
+        }
+    }
+
+    /// Waits until at least one echo has been intercepted.
+    func waitForEcho() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.withLock {
+                if !_heldEchoes.isEmpty {
+                    continuation.resume()
+                } else {
+                    echoContinuation = continuation
+                }
+            }
+        }
+    }
+
+    /// Replays all held echo messages through the channel's internal message handler.
+    func releaseAll() async {
+        let echoes = lock.withLock {
+            let e = _heldEchoes
+            _heldEchoes.removeAll()
+            return e
+        }
+        for echo in echoes {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                channel.internal.queue.async {
+                    self.channel.internal.onChannelMessage(echo)
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    /// Releases only the first held echo message.
+    func releaseFirst() async {
+        let echo: ARTProtocolMessage? = lock.withLock {
+            _heldEchoes.isEmpty ? nil : _heldEchoes.removeFirst()
+        }
+        guard let echo else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            channel.internal.queue.async {
+                self.channel.internal.onChannelMessage(echo)
+                continuation.resume()
+            }
+        }
+    }
+
+    /// Removes the interceptor, restoring normal echo handling.
+    func restore() {
+        transport.setBeforeIncomingMessageModifier(nil)
+    }
+}
+
+/// Intercepts ACK messages (action 1) arriving from Realtime, holding them so tests can control
+/// the timing of ACK delivery. Uses `setBeforeIncomingMessageModifier` on `TestProxyTransport`.
+private final class AckInterceptor: @unchecked Sendable {
+    private let transport: TestProxyTransport
+    private let lock = NSLock()
+    private var _heldAcks: [ARTProtocolMessage] = []
+    private var ackContinuation: CheckedContinuation<Void, Never>?
+
+    var heldAcks: [ARTProtocolMessage] {
+        lock.withLock { _heldAcks }
+    }
+
+    init(client: ARTRealtime) {
+        self.transport = client.internal.transport as! TestProxyTransport
+
+        transport.setBeforeIncomingMessageModifier { [weak self] message in
+            guard let self else { return message }
+            if message.action == .ack {
+                lock.withLock {
+                    _heldAcks.append(message)
+                    ackContinuation?.resume()
+                    ackContinuation = nil
+                }
+                return nil // suppress the ACK
+            }
+            return message
+        }
+    }
+
+    /// Waits until at least one ACK has been intercepted.
+    func waitForAck() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.withLock {
+                if !_heldAcks.isEmpty {
+                    continuation.resume()
+                } else {
+                    ackContinuation = continuation
+                }
+            }
+        }
+    }
+
+    /// Releases all held ACK messages by feeding them back through the transport's receive method.
+    func releaseAll() {
+        let acks = lock.withLock {
+            let a = _heldAcks
+            _heldAcks.removeAll()
+            return a
+        }
+        // Temporarily clear the modifier so we can replay without re-intercepting
+        transport.setBeforeIncomingMessageModifier(nil)
+        for ack in acks {
+            transport.receive(ack)
+        }
+        // Restore the interceptor
+        transport.setBeforeIncomingMessageModifier { [weak self] message in
+            guard let self else { return message }
+            if message.action == .ack {
+                lock.withLock {
+                    _heldAcks.append(message)
+                    ackContinuation?.resume()
+                    ackContinuation = nil
+                }
+                return nil
+            }
+            return message
+        }
+    }
+
+    /// Removes the interceptor, restoring normal ACK handling.
+    func restore() {
+        transport.setBeforeIncomingMessageModifier(nil)
+    }
+}
+
+/// Injects an ATTACHED protocol message into the channel, optionally with the HAS_OBJECTS flag.
+/// This triggers a sync sequence when `hasObjects` is true.
+private func injectAttachedMessage(channel: ARTRealtimeChannel, hasObjects: Bool) async {
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        channel.internal.queue.async {
+            let pm = ARTProtocolMessage()
+            pm.action = .attached
+            pm.channel = channel.name
+            pm.flags = hasObjects ? Int64(1 << 7) : 0 // ARTProtocolMessageFlagHasObjects
+            channel.internal.onChannelMessage(pm)
+            continuation.resume()
+        }
+    }
+}
+
 // MARK: - Constants
 
 private let objectsFixturesChannel = "objects_fixtures"
