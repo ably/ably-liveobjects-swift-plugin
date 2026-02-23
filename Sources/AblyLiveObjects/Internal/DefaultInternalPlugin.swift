@@ -70,7 +70,7 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
     /// A class that wraps an object message.
     ///
     /// We need this intermediate type because we want object messages to be structs — because they're nicer to work with internally — but a struct can't conform to the class-bound `_AblyPluginSupportPrivate.ObjectMessageProtocol`.
-    private final class ObjectMessageBox<T>: _AblyPluginSupportPrivate.ObjectMessageProtocol where T: Sendable {
+    fileprivate final class ObjectMessageBox<T>: _AblyPluginSupportPrivate.ObjectMessageProtocol where T: Sendable {
         internal let objectMessage: T
 
         init(objectMessage: T) {
@@ -252,5 +252,16 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
         }
 
         return connectionDetails.siteCode?()
+    }
+}
+
+extension ARTProtocolMessage {
+    /// Test-only: extract InboundObjectMessages from the protocol message's state.
+    internal var testsOnly_inboundObjectMessages: [InboundObjectMessage] {
+        (state ?? []).compactMap { item -> InboundObjectMessage? in
+            guard let box = item as? DefaultInternalPlugin.ObjectMessageBox<InboundObjectMessage>
+            else { return nil }
+            return box.objectMessage
+        }
     }
 }
