@@ -37,7 +37,7 @@ internal extension InternalLiveObject {
         // Emit the deleted lifecycle event
         // Taken from https://github.com/ably/ably-js/blob/e280bff11a4a7627362c5185e764b7ebd0490570/src/plugins/objects/liveobject.ts#L168
         // TODO: Bring in line with spec once it exists (https://github.com/ably/ably-liveobjects-swift-plugin/issues/77)
-        liveObjectMutableState.emitLifecycleEvent(.deleted, on: userCallbackQueue)
+        liveObjectMutableState.nosync_emitLifecycleEvent(.deleted, on: userCallbackQueue)
     }
 
     /// Applies an `OBJECT_DELETE` operation, per RTLO5.
