@@ -206,10 +206,7 @@ extension WireObjectOperation: WireObjectCodable {
             WireKey.objectId.rawValue: .string(objectId),
         ]
 
-        // When the *WithObjectId variant is present (outbound CREATE), don't send the
-        // corresponding create field — the server populates it from the initialValue.
-        // The create field is only kept on the ObjectOperation for local merge purposes.
-        if let mapCreate, mapCreateWithObjectId == nil {
+        if let mapCreate {
             result[WireKey.mapCreate.rawValue] = .object(mapCreate.toWireObject)
         }
         if let mapSet {
@@ -218,7 +215,7 @@ extension WireObjectOperation: WireObjectCodable {
         if let mapRemove {
             result[WireKey.mapRemove.rawValue] = .object(mapRemove.toWireObject)
         }
-        if let counterCreate, counterCreateWithObjectId == nil {
+        if let counterCreate {
             result[WireKey.counterCreate.rawValue] = .object(counterCreate.toWireObject)
         }
         if let counterInc {

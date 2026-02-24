@@ -395,12 +395,6 @@ internal struct ObjectsPool {
         if let existingEntry = entries[creationOperation.objectID] {
             switch existingEntry {
             case let .counter(counter):
-                // The server echo may have arrived and created this counter with
-                // zeroed data before we got here. Merge the local initial value to
-                // ensure the counter has the correct data. This is safe because
-                // mergeInitialValue additively applies the count, and the echo's
-                // COUNTER_CREATE had count 0.
-                _ = counter.nosync_mergeInitialValue(from: creationOperation.operation)
                 return counter
             case .map:
                 // TODO: Add the ability to statically reason about the type of pool entries in https://github.com/ably/ably-liveobjects-swift-plugin/issues/36
@@ -448,11 +442,6 @@ internal struct ObjectsPool {
         if let existingEntry = entries[creationOperation.objectID] {
             switch existingEntry {
             case let .map(map):
-                // The server echo may have arrived and created this map with empty
-                // entries before we got here. Merge the local initial value to
-                // ensure the map has the correct entries. This is safe because
-                // mergeInitialValue applies MAP_SET operations which are additive.
-                _ = map.nosync_mergeInitialValue(from: creationOperation.operation, objectsPool: &self)
                 return map
             case .counter:
                 // TODO: Add the ability to statically reason about the type of pool entries in https://github.com/ably/ably-liveobjects-swift-plugin/issues/36

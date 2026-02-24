@@ -127,7 +127,7 @@ struct AblyLiveObjectsTests {
     }
 
     /// A basic test of the public API of the LiveObjects plugin.
-    @Test(arguments: [false])
+    @Test(arguments: [true, false])
     func smokeTest(useBinaryProtocol: Bool) async throws {
         let client = try await ClientHelper.realtimeWithObjects(options: .init(useBinaryProtocol: useBinaryProtocol))
         let channel = client.channels.get(UUID().uuidString, options: ClientHelper.channelOptionsWithObjects())
