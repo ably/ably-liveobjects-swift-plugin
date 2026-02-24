@@ -57,13 +57,13 @@ struct ObjectCreationHelpersTests {
 
             // Check that the denormalized properties match those of the ObjectMessage
             #expect(creationOperation.objectMessage.operation == creationOperation.operation)
-            #expect(creationOperation.objectMessage.operation?.map?.semantics == .known(creationOperation.semantics))
+            #expect(creationOperation.objectMessage.operation?.mapCreate?.semantics == .known(creationOperation.semantics))
 
-            // Check that the initial value JSON is correctly populated on the initialValue property per RTO11f12, using the RTO11f4 partial ObjectOperation and correctly encoded per RTO13
-            let initialValueString = try #require(creationOperation.operation.initialValue)
+            // Check that the initial value JSON is correctly populated on the mapCreateWithObjectId.initialValue property per RTO11f12, using the RTO11f4 partial ObjectOperation and correctly encoded per RTO13
+            let initialValueString = try #require(creationOperation.operation.mapCreateWithObjectId?.initialValue)
             let deserializedInitialValue = try #require(try JSONObjectOrArray(jsonString: initialValueString).objectValue)
             #expect(deserializedInitialValue == [
-                "map": [
+                "mapCreate": [
                     // RTO11f4a
                     "semantics": .number(Double(ObjectsMapSemantics.lww.rawValue)),
                     "entries": [
@@ -119,7 +119,7 @@ struct ObjectCreationHelpersTests {
 
             // Check that the partial ObjectOperation properties are set on the ObjectMessage, per RTO11f13
 
-            #expect(creationOperation.objectMessage.operation?.map?.semantics == .known(.lww))
+            #expect(creationOperation.objectMessage.operation?.mapCreate?.semantics == .known(.lww))
 
             let expectedEntries: [String: ObjectsMapEntry] = [
                 "mapRef": .init(data: .init(objectId: "referencedMapID")),
@@ -131,7 +131,7 @@ struct ObjectCreationHelpersTests {
                 "booleanKey": .init(data: .init(boolean: true)),
                 "dataKey": .init(data: .init(bytes: Data([0x01, 0x02, 0x03]))),
             ]
-            #expect(creationOperation.objectMessage.operation?.map?.entries == expectedEntries)
+            #expect(creationOperation.objectMessage.operation?.mapCreate?.entries == expectedEntries)
 
             // Check the other ObjectMessage properties
 
@@ -142,7 +142,7 @@ struct ObjectCreationHelpersTests {
             #expect(try /map:.*@1754042434000/.firstMatch(in: creationOperation.operation.objectId) != nil)
 
             // Check that nonce has been populated per RTO11f11 (we make no assertions about its format or randomness)
-            #expect(creationOperation.operation.nonce != nil)
+            #expect(creationOperation.operation.mapCreateWithObjectId?.nonce != nil)
         }
 
         // @spec RTO12f2a
@@ -168,11 +168,11 @@ struct ObjectCreationHelpersTests {
             // Check that the denormalized properties match those of the ObjectMessage
             #expect(creationOperation.objectMessage.operation == creationOperation.operation)
 
-            // Check that the initial value JSON is correctly populated on the initialValue property per RTO12f10, using the RTO12f2 partial ObjectOperation and correctly encoded per RTO13
-            let initialValueString = try #require(creationOperation.operation.initialValue)
+            // Check that the initial value JSON is correctly populated on the counterCreateWithObjectId.initialValue property per RTO12f10, using the RTO12f2 partial ObjectOperation and correctly encoded per RTO13
+            let initialValueString = try #require(creationOperation.operation.counterCreateWithObjectId?.initialValue)
             let deserializedInitialValue = try #require(try JSONObjectOrArray(jsonString: initialValueString).objectValue)
             #expect(deserializedInitialValue == [
-                "counter": [
+                "counterCreate": [
                     // RTO12f2a
                     "count": 10.5,
                 ],
@@ -180,7 +180,7 @@ struct ObjectCreationHelpersTests {
 
             // Check that the partial ObjectOperation properties are set on the ObjectMessage, per RTO12f10
 
-            #expect(creationOperation.objectMessage.operation?.counter?.count == 10.5)
+            #expect(creationOperation.objectMessage.operation?.counterCreate?.count == 10.5)
 
             // Check the other ObjectMessage properties
 
@@ -191,7 +191,7 @@ struct ObjectCreationHelpersTests {
             #expect(try /counter:.*@1754042434000/.firstMatch(in: creationOperation.operation.objectId) != nil)
 
             // Check that nonce has been populated per RTO12f9 (we make no assertions about its format or randomness)
-            #expect(creationOperation.operation.nonce != nil)
+            #expect(creationOperation.operation.counterCreateWithObjectId?.nonce != nil)
         }
     }
 

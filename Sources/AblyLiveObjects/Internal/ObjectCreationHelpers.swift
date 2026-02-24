@@ -53,12 +53,10 @@ internal enum ObjectCreationHelpers {
         timestamp: Date,
     ) -> CounterCreationOperation {
         // RTO12f2: Create initial value for the new LiveCounter
-        let initialValue = PartialObjectOperation(
-            counter: WireObjectsCounter(count: NSNumber(value: count)),
-        )
+        let counterCreate = CounterCreate(count: NSNumber(value: count))
 
         // RTO12f3: Create an initial value JSON string as described in RTO13
-        let initialValueJSONString = createInitialValueJSONString(from: initialValue)
+        let initialValueJSONString = createInitialValueJSONString(from: counterCreate)
 
         // RTO12f4: Create a unique nonce as a random string
         let nonce = generateNonce()
@@ -78,9 +76,8 @@ internal enum ObjectCreationHelpers {
         let operation = ObjectOperation(
             action: .known(.counterCreate),
             objectId: objectId,
-            counter: WireObjectsCounter(count: NSNumber(value: count)),
-            nonce: nonce,
-            initialValue: initialValueJSONString,
+            counterCreate: counterCreate,
+            counterCreateWithObjectId: .init(nonce: nonce, initialValue: initialValueJSONString),
         )
 
         // Create the OutboundObjectMessage
@@ -109,15 +106,14 @@ internal enum ObjectCreationHelpers {
             ObjectsMapEntry(data: liveMapValue.nosync_toObjectData)
         }
 
-        let initialValue = PartialObjectOperation(
-            map: ObjectsMap(
-                semantics: .known(.lww),
-                entries: mapEntries,
-            ),
+        let semantics = ObjectsMapSemantics.lww
+        let mapCreate = MapCreate(
+            semantics: .known(semantics),
+            entries: mapEntries,
         )
 
         // RTO11f5: Create an initial value JSON string as described in RTO13
-        let initialValueJSONString = createInitialValueJSONString(from: initialValue)
+        let initialValueJSONString = createInitialValueJSONString(from: mapCreate)
 
         // RTO11f6: Create a unique nonce as a random string
         let nonce = generateNonce()
@@ -134,16 +130,11 @@ internal enum ObjectCreationHelpers {
         )
 
         // RTO11f9-13: Set ObjectMessage.operation fields
-        let semantics = ObjectsMapSemantics.lww
         let operation = ObjectOperation(
             action: .known(.mapCreate),
             objectId: objectId,
-            map: ObjectsMap(
-                semantics: .known(semantics),
-                entries: mapEntries,
-            ),
-            nonce: nonce,
-            initialValue: initialValueJSONString,
+            mapCreate: mapCreate,
+            mapCreateWithObjectId: .init(nonce: nonce, initialValue: initialValueJSONString),
         )
 
         // Create the OutboundObjectMessage
@@ -161,17 +152,31 @@ internal enum ObjectCreationHelpers {
 
     // MARK: - Private Helper Methods
 
-    /// Creates an initial value JSON string from a PartialObjectOperation, per RTO13.
-    private static func createInitialValueJSONString(from initialValue: PartialObjectOperation) -> String {
+    /// Creates an initial value JSON string from a CounterCreate, per RTO13.
+    private static func createInitialValueJSONString(from counterCreate: CounterCreate) -> String {
+        let wireCounterCreate = counterCreate.toWire()
+        return createInitialValueJSONString(wireObject: ["counterCreate": wireCounterCreate.toWireObject])
+    }
+
+    /// Creates an initial value JSON string from a MapCreate, per RTO13.
+    private static func createInitialValueJSONString(from mapCreate: MapCreate) -> String {
+        let wireMapCreate = mapCreate.toWire(format: .json)
+        return createInitialValueJSONString(wireObject: ["mapCreate": wireMapCreate.toWireObject])
+    }
+
+    /// Shared implementation for encoding an initial value wire object to a JSON string, per RTO13.
+    private static func createInitialValueJSONString(wireObject: [String: [String: WireValue]]) -> String {
         // RTO13b: Encode the initial value using OM4 encoding
-        let partialWireObjectOperation = initialValue.toWire(format: .json)
-        let jsonObject = partialWireObjectOperation.toWireObject.mapValues { wireValue in
-            do {
-                return try wireValue.toJSONValue
-            } catch {
-                // By using `format: .json` we've requested a type that should be JSON-encodable, so if it isn't then it's a programmer error. (We can't reason about it statically though because of our choice to use a general-purpose WireValue type; maybe could improve upon this in the future.)
-                preconditionFailure("Failed to convert WireValue \(wireValue) to JSONValue when encoding initialValue")
+        let jsonObject = wireObject.mapValues { innerObject -> JSONValue in
+            let jsonInner: [String: JSONValue] = innerObject.mapValues { wireValue in
+                do {
+                    return try wireValue.toJSONValue
+                } catch {
+                    // By using `format: .json` we've requested a type that should be JSON-encodable, so if it isn't then it's a programmer error.
+                    preconditionFailure("Failed to convert WireValue \(wireValue) to JSONValue when encoding initialValue")
+                }
             }
+            return .object(jsonInner)
         }
 
         // RTO13c

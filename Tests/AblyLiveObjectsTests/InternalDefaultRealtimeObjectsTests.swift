@@ -1066,7 +1066,7 @@ struct InternalDefaultRealtimeObjectsTests {
                 // Create a COUNTER_INC operation message
                 let operationMessage = TestFactories.counterIncOperationMessage(
                     objectId: objectId,
-                    amount: 10,
+                    number: 10,
                     serial: "ts2", // Higher than existing "ts1"
                     siteCode: "site1",
                 )
@@ -1132,7 +1132,7 @@ struct InternalDefaultRealtimeObjectsTests {
                 // Inject second OBJECT ProtocolMessage during sync (RTO8a)
                 let secondObjectMessage = TestFactories.counterIncOperationMessage(
                     objectId: "counter:1@456",
-                    amount: 10,
+                    number: 10,
                     serial: "ts4", // Higher than sync data "ts2"
                     siteCode: "site1",
                 )
@@ -1235,7 +1235,7 @@ struct InternalDefaultRealtimeObjectsTests {
             let objectID = try #require(publishedMessage.operation?.objectId)
             #expect(objectID.hasPrefix("map:"))
             #expect(objectID.contains("1754042434000")) // check contains the server timestamp in milliseconds per RTO11f7
-            #expect(publishedMessage.operation?.map?.entries == [
+            #expect(publishedMessage.operation?.mapCreate?.entries == [
                 "stringKey": .init(data: .init(string: "stringValue")),
             ])
 
@@ -1267,7 +1267,7 @@ struct InternalDefaultRealtimeObjectsTests {
             let publishedMessage = publishedMessages[0]
 
             // Verify map operation has empty entries per RTO11f4b
-            let mapOperation = publishedMessage.operation?.map
+            let mapOperation = publishedMessage.operation?.mapCreate
             #expect(mapOperation?.entries?.isEmpty == true)
 
             // Verify LiveMap has expected entries
@@ -1364,7 +1364,7 @@ struct InternalDefaultRealtimeObjectsTests {
             let objectID = try #require(publishedMessage.operation?.objectId)
             #expect(objectID.hasPrefix("counter:"))
             #expect(objectID.contains("1754042434000")) // check contains the server timestamp in milliseconds per RTO12f5
-            #expect(publishedMessage.operation?.counter?.count == 10.5)
+            #expect(publishedMessage.operation?.counterCreate?.count == 10.5)
 
             // Verify initial value was merged per RTO12h3a
             #expect(try returnedCounter.value(coreSDK: coreSDK) == 10.5)
@@ -1394,7 +1394,7 @@ struct InternalDefaultRealtimeObjectsTests {
             let publishedMessage = publishedMessages[0]
 
             // Verify counter operation has zero count per RTO12f2a
-            let counterOperation = publishedMessage.operation?.counter
+            let counterOperation = publishedMessage.operation?.counterCreate
             // swiftlint:disable:next empty_count
             #expect(counterOperation?.count == 0)
 

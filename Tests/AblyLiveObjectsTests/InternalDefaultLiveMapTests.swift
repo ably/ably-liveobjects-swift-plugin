@@ -1217,7 +1217,7 @@ struct InternalDefaultLiveMapTests {
 
             let operation = TestFactories.objectOperation(
                 action: .known(.mapSet),
-                mapOp: ObjectsMapOp(key: "key1", data: ObjectData(string: "new")),
+                mapSet: MapSet(key: "key1", value: ObjectData(string: "new")),
             )
 
             // Apply operation with serial "ts1" which is lexicographically less than existing "ts2" and thus will be applied per RTLO4a (this is a non-pathological case of RTOL4a, that spec point being fully tested elsewhere)
@@ -1312,7 +1312,7 @@ struct InternalDefaultLiveMapTests {
 
             let operation = TestFactories.objectOperation(
                 action: .known(.mapSet),
-                mapOp: ObjectsMapOp(key: "key1", data: ObjectData(string: "new")),
+                mapSet: MapSet(key: "key1", value: ObjectData(string: "new")),
             )
 
             // Apply MAP_SET operation
@@ -1368,7 +1368,7 @@ struct InternalDefaultLiveMapTests {
 
             let operation = TestFactories.objectOperation(
                 action: .known(.mapRemove),
-                mapOp: ObjectsMapOp(key: "key1", data: ObjectData()),
+                mapRemove: MapRemove(key: "key1"),
             )
 
             // Apply MAP_REMOVE operation
@@ -1490,11 +1490,11 @@ struct InternalDefaultLiveMapTests {
                     action: .known(.mapSet),
                     // RTLM20e3
                     objectId: "map:test@123",
-                    mapOp: ObjectsMapOp(
+                    mapSet: MapSet(
                         // RTLM20e4
                         key: "testKey",
                         // RTLM20e5
-                        data: expectedData,
+                        value: expectedData,
                     ),
                 ),
             )
@@ -1572,10 +1572,9 @@ struct InternalDefaultLiveMapTests {
                     action: .known(.mapRemove),
                     // RTLM21e3
                     objectId: "map:test@123",
-                    mapOp: ObjectsMapOp(
+                    mapRemove: MapRemove(
                         // RTLM21e4
-                        key: "testKey",
-                        data: nil,
+                        key: "testKey"
                     ),
                 ),
             )

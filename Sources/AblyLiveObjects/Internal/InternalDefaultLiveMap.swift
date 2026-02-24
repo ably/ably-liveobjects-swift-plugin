@@ -170,11 +170,11 @@ internal final class InternalDefaultLiveMap: Sendable {
                     action: .known(.mapSet),
                     // RTLM20e3
                     objectId: mutableState.liveObjectMutableState.objectID,
-                    mapOp: .init(
+                    mapSet: .init(
                         // RTLM20e4
                         key: key,
                         // RTLM20e5
-                        data: value.nosync_toObjectData,
+                        value: value.nosync_toObjectData,
                     ),
                 ),
             )
@@ -194,7 +194,7 @@ internal final class InternalDefaultLiveMap: Sendable {
                     action: .known(.mapRemove),
                     // RTLM21e3
                     objectId: mutableState.liveObjectMutableState.objectID,
-                    mapOp: .init(
+                    mapRemove: .init(
                         // RTLM21e4
                         key: key,
                     ),
@@ -521,8 +521,8 @@ internal final class InternalDefaultLiveMap: Sendable {
             userCallbackQueue: DispatchQueue,
             clock: SimpleClock,
         ) -> LiveObjectUpdate<DefaultLiveMapUpdate> {
-            // RTLM17a: For each key–ObjectsMapEntry pair in ObjectOperation.map.entries
-            let perKeyUpdates: [LiveObjectUpdate<DefaultLiveMapUpdate>] = if let entries = operation.map?.entries {
+            // RTLM17a: For each key–ObjectsMapEntry pair in ObjectOperation.mapCreate.entries
+            let perKeyUpdates: [LiveObjectUpdate<DefaultLiveMapUpdate>] = if let entries = operation.mapCreate?.entries {
                 entries.map { key, entry in
                     if entry.tombstone == true {
                         // RTLM17a2: If ObjectsMapEntry.tombstone is true, apply the MAP_REMOVE operation
@@ -614,20 +614,20 @@ internal final class InternalDefaultLiveMap: Sendable {
                 // RTLM15d1a
                 liveObjectMutableState.emit(update, on: userCallbackQueue)
             case .known(.mapSet):
-                guard let mapOp = operation.mapOp else {
-                    logger.log("Could not apply MAP_SET since operation.mapOp is missing", level: .warn)
+                guard let mapSet = operation.mapSet else {
+                    logger.log("Could not apply MAP_SET since operation.mapSet is missing", level: .warn)
                     return
                 }
-                guard let data = mapOp.data else {
-                    logger.log("Could not apply MAP_SET since operation.data is missing", level: .warn)
+                guard let value = mapSet.value else {
+                    logger.log("Could not apply MAP_SET since operation.mapSet.value is missing", level: .warn)
                     return
                 }
 
                 // RTLM15d2
                 let update = applyMapSetOperation(
-                    key: mapOp.key,
+                    key: mapSet.key,
                     operationTimeserial: applicableOperation.objectMessageSerial,
-                    operationData: data,
+                    operationData: value,
                     objectsPool: &objectsPool,
                     logger: logger,
                     internalQueue: internalQueue,
@@ -637,13 +637,13 @@ internal final class InternalDefaultLiveMap: Sendable {
                 // RTLM15d2a
                 liveObjectMutableState.emit(update, on: userCallbackQueue)
             case .known(.mapRemove):
-                guard let mapOp = operation.mapOp else {
+                guard let mapRemove = operation.mapRemove else {
                     return
                 }
 
                 // RTLM15d3
                 let update = applyMapRemoveOperation(
-                    key: mapOp.key,
+                    key: mapRemove.key,
                     operationTimeserial: applicableOperation.objectMessageSerial,
                     operationSerialTimestamp: objectMessageSerialTimestamp,
                     logger: logger,

@@ -131,20 +131,21 @@ final class ObjectsHelper: Sendable {
 
     /// Creates a map create operation
     func mapCreateOp(objectId: String? = nil, entries: [String: WireValue]? = nil) -> [String: WireValue] {
+        var mapCreate: [String: WireValue] = [
+            "semantics": .number(NSNumber(value: 0)),
+        ]
+
+        if let entries {
+            mapCreate["entries"] = .object(entries)
+        }
+
         var operation: [String: WireValue] = [
             "action": .number(NSNumber(value: Actions.mapCreate.rawValue)),
-            "nonce": .string(nonce()),
-            "map": .object(["semantics": .number(NSNumber(value: 0))]),
+            "mapCreate": .object(mapCreate),
         ]
 
         if let objectId {
             operation["objectId"] = .string(objectId)
-        }
-
-        if let entries {
-            var mapValue = operation["map"]!.objectValue!
-            mapValue["entries"] = .object(entries)
-            operation["map"] = .object(mapValue)
         }
 
         return ["operation": .object(operation)]
@@ -156,9 +157,9 @@ final class ObjectsHelper: Sendable {
             "operation": .object([
                 "action": .number(NSNumber(value: Actions.mapSet.rawValue)),
                 "objectId": .string(objectId),
-                "mapOp": .object([
+                "mapSet": .object([
                     "key": .string(key),
-                    "data": data,
+                    "value": data,
                 ]),
             ]),
         ]
@@ -170,7 +171,7 @@ final class ObjectsHelper: Sendable {
             "operation": .object([
                 "action": .number(NSNumber(value: Actions.mapRemove.rawValue)),
                 "objectId": .string(objectId),
-                "mapOp": .object([
+                "mapRemove": .object([
                     "key": .string(key),
                 ]),
             ]),
@@ -181,7 +182,6 @@ final class ObjectsHelper: Sendable {
     func counterCreateOp(objectId: String? = nil, count: Int? = nil) -> [String: WireValue] {
         var operation: [String: WireValue] = [
             "action": .number(NSNumber(value: Actions.counterCreate.rawValue)),
-            "nonce": .string(nonce()),
         ]
 
         if let objectId {
@@ -189,20 +189,20 @@ final class ObjectsHelper: Sendable {
         }
 
         if let count {
-            operation["counter"] = .object(["count": .number(NSNumber(value: count))])
+            operation["counterCreate"] = .object(["count": .number(NSNumber(value: count))])
         }
 
         return ["operation": .object(operation)]
     }
 
     /// Creates a counter increment operation
-    func counterIncOp(objectId: String, amount: Int) -> [String: WireValue] {
+    func counterIncOp(objectId: String, number: Int) -> [String: WireValue] {
         [
             "operation": .object([
                 "action": .number(NSNumber(value: Actions.counterInc.rawValue)),
                 "objectId": .string(objectId),
-                "counterOp": .object([
-                    "amount": .number(NSNumber(value: amount)),
+                "counterInc": .object([
+                    "number": .number(NSNumber(value: number)),
                 ]),
             ]),
         ]
@@ -214,6 +214,7 @@ final class ObjectsHelper: Sendable {
             "operation": .object([
                 "action": .number(NSNumber(value: Actions.objectDelete.rawValue)),
                 "objectId": .string(objectId),
+                "objectDelete": .object([:]),
             ]),
         ]
     }
