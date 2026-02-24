@@ -63,12 +63,14 @@ struct TestLibrary: AsyncParsableCommand {
     )
 
     @Option var platform: Platform
+    @Flag(help: "Only run unit tests (excludes integration tests).")
+    var onlyUnitTests = false
 
     mutating func run() async throws {
         let destinationSpecifier = try await platform.resolve()
         let scheme = "AblyLiveObjects"
 
-        try await XcodeRunner.runXcodebuild(action: "test-without-building", scheme: scheme, destination: destinationSpecifier)
+        try await XcodeRunner.runXcodebuild(action: "test-without-building", scheme: scheme, destination: destinationSpecifier, testPlan: onlyUnitTests ? "UnitTests" : nil)
     }
 }
 
