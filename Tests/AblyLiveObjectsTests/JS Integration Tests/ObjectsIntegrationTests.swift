@@ -338,6 +338,7 @@ class MainActorStorage<T> {
 // MARK: - Test suite
 
 @Suite(
+    .tags(.integration),
     .objectsFixtures,
     // These tests exhibit flakiness (hanging, timeouts, occasional Realtime
     // connection limits) when run concurrently, where I think that we had up to

@@ -2,6 +2,7 @@ import Ably.Private
 @testable import AblyLiveObjects
 import Testing
 
+@Suite(.tags(.integration))
 struct ObjectLifetimesTests {
     @Test("LiveObjects functionality works with only a strong reference to channel's public objects property")
     func withStrongReferenceToPublicObjectsProperty() async throws {
