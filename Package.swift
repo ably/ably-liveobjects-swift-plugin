@@ -18,13 +18,15 @@ let package = Package(
         ),
     ],
     dependencies: [
+        // TODO: Unpin before release
         .package(
-            name: "ably-cocoa",
-            path: "../ably-cocoa",
+            url: "https://github.com/ably/ably-cocoa",
+            revision: "e5eeae01",
         ),
+        // TODO: Unpin before release
         .package(
-            name: "ably-cocoa-plugin-support",
-            path: "../ably-cocoa-plugin-support",
+            url: "https://github.com/ably/ably-cocoa-plugin-support",
+            revision: "c1fe793",
         ),
         .package(
             url: "https://github.com/apple/swift-argument-parser",
