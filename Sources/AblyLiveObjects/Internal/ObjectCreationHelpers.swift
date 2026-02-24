@@ -152,34 +152,29 @@ internal enum ObjectCreationHelpers {
 
     // MARK: - Private Helper Methods
 
-    /// Creates an initial value JSON string from a CounterCreate, per RTO13.
+    /// Creates an initial value JSON string from a CounterCreate, per RTO12f13.
     private static func createInitialValueJSONString(from counterCreate: CounterCreate) -> String {
         let wireCounterCreate = counterCreate.toWire()
-        return createInitialValueJSONString(wireObject: ["counterCreate": wireCounterCreate.toWireObject])
+        return createInitialValueJSONString(wireObject: wireCounterCreate.toWireObject)
     }
 
-    /// Creates an initial value JSON string from a MapCreate, per RTO13.
+    /// Creates an initial value JSON string from a MapCreate, per RTO11f15.
     private static func createInitialValueJSONString(from mapCreate: MapCreate) -> String {
         let wireMapCreate = mapCreate.toWire(format: .json)
-        return createInitialValueJSONString(wireObject: ["mapCreate": wireMapCreate.toWireObject])
+        return createInitialValueJSONString(wireObject: wireMapCreate.toWireObject)
     }
 
-    /// Shared implementation for encoding an initial value wire object to a JSON string, per RTO13.
-    private static func createInitialValueJSONString(wireObject: [String: [String: WireValue]]) -> String {
-        // RTO13b: Encode the initial value using OM4 encoding
-        let jsonObject = wireObject.mapValues { innerObject -> JSONValue in
-            let jsonInner: [String: JSONValue] = innerObject.mapValues { wireValue in
-                do {
-                    return try wireValue.toJSONValue
-                } catch {
-                    // By using `format: .json` we've requested a type that should be JSON-encodable, so if it isn't then it's a programmer error.
-                    preconditionFailure("Failed to convert WireValue \(wireValue) to JSONValue when encoding initialValue")
-                }
+    /// Encodes a wire object dictionary to a JSON string for use as an initial value.
+    private static func createInitialValueJSONString(wireObject: [String: WireValue]) -> String {
+        let jsonObject: [String: JSONValue] = wireObject.mapValues { wireValue in
+            do {
+                return try wireValue.toJSONValue
+            } catch {
+                // By using `format: .json` we've requested a type that should be JSON-encodable, so if it isn't then it's a programmer error.
+                preconditionFailure("Failed to convert WireValue \(wireValue) to JSONValue when encoding initialValue")
             }
-            return .object(jsonInner)
         }
 
-        // RTO13c
         return JSONObjectOrArray.object(jsonObject).toJSONString
     }
 
