@@ -21,7 +21,7 @@ let package = Package(
         // TODO: Unpin before release
         .package(
             url: "https://github.com/ably/ably-cocoa",
-            revision: "b1993b42",
+            revision: "5b2684ab",
         ),
         // TODO: Unpin before release
         .package(
