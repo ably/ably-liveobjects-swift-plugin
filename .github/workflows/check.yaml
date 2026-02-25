@@ -138,7 +138,7 @@ jobs:
         run: swift run BuildTool build-library-for-testing --platform ${{ matrix.platform }}
 
       - name: Run tests
-        run: swift run BuildTool test-library --platform ${{ matrix.platform }}
+        run: swift run BuildTool test-library --platform ${{ matrix.platform }} --without-building
 
   code-coverage:
     name: Generate code coverage

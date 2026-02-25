@@ -42,7 +42,7 @@ struct BuildLibrary: AsyncParsableCommand {
 struct BuildLibraryForTesting: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Build the AblyLiveObjects library for testing",
-        discussion: "After running this command, you can run the test-library command.",
+        discussion: "This is for use with test-library --without-building.",
     )
 
     @Option var platform: Platform
@@ -59,18 +59,21 @@ struct BuildLibraryForTesting: AsyncParsableCommand {
 struct TestLibrary: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Test the AblyLiveObjects library",
-        discussion: "You need to run the build-library-for-testing command before running this command.",
+        discussion: "By default, this builds and tests in a single step. Pass --without-building to skip the build (requires a prior build-library-for-testing step).",
     )
 
     @Option var platform: Platform
     @Flag(help: "Only run unit tests (excludes integration tests).")
     var onlyUnitTests = false
+    @Flag(help: "Skip building; requires a prior build-library-for-testing step.")
+    var withoutBuilding = false
 
     mutating func run() async throws {
         let destinationSpecifier = try await platform.resolve()
         let scheme = "AblyLiveObjects"
 
-        try await XcodeRunner.runXcodebuild(action: "test-without-building", scheme: scheme, destination: destinationSpecifier, testPlan: onlyUnitTests ? "UnitTests" : nil)
+        let action = withoutBuilding ? "test-without-building" : "test"
+        try await XcodeRunner.runXcodebuild(action: action, scheme: scheme, destination: destinationSpecifier, testPlan: onlyUnitTests ? "UnitTests" : nil)
     }
 }
 
