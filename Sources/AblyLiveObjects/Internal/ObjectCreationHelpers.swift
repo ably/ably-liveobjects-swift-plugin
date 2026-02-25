@@ -53,12 +53,10 @@ internal enum ObjectCreationHelpers {
         timestamp: Date,
     ) -> CounterCreationOperation {
         // RTO12f2: Create initial value for the new LiveCounter
-        let initialValue = PartialObjectOperation(
-            counter: WireObjectsCounter(count: NSNumber(value: count)),
-        )
+        let counterCreate = CounterCreate(count: NSNumber(value: count))
 
         // RTO12f3: Create an initial value JSON string as described in RTO13
-        let initialValueJSONString = createInitialValueJSONString(from: initialValue)
+        let initialValueJSONString = createInitialValueJSONString(from: counterCreate)
 
         // RTO12f4: Create a unique nonce as a random string
         let nonce = generateNonce()
@@ -75,22 +73,27 @@ internal enum ObjectCreationHelpers {
         )
 
         // RTO12f7-12: Set ObjectMessage.operation fields
-        let operation = ObjectOperation(
+        let sendOperation = ObjectOperation(
             action: .known(.counterCreate),
             objectId: objectId,
-            counter: WireObjectsCounter(count: NSNumber(value: count)),
-            nonce: nonce,
-            initialValue: initialValueJSONString,
+            counterCreateWithObjectId: .init(nonce: nonce, initialValue: initialValueJSONString),
+        )
+
+        // TODO: The spec currently says that publishAndApply should apply the same operation that it sends (RTO20d2), but the operation we send (counterCreateWithObjectId) is not the one that mergeInitialValue expects (counterCreate). For now, we construct a separate operation for local application. We have not yet specified this behaviour: https://github.com/ably/specification/pull/426#discussion_r2849354510
+        let applyOperation = ObjectOperation(
+            action: .known(.counterCreate),
+            objectId: objectId,
+            counterCreate: counterCreate,
         )
 
         // Create the OutboundObjectMessage
         let objectMessage = OutboundObjectMessage(
-            operation: operation,
+            operation: sendOperation,
         )
 
         return CounterCreationOperation(
             objectID: objectId,
-            operation: operation,
+            operation: applyOperation,
             objectMessage: objectMessage,
         )
     }
@@ -109,15 +112,14 @@ internal enum ObjectCreationHelpers {
             ObjectsMapEntry(data: liveMapValue.nosync_toObjectData)
         }
 
-        let initialValue = PartialObjectOperation(
-            map: ObjectsMap(
-                semantics: .known(.lww),
-                entries: mapEntries,
-            ),
+        let semantics = ObjectsMapSemantics.lww
+        let mapCreate = MapCreate(
+            semantics: .known(semantics),
+            entries: mapEntries,
         )
 
         // RTO11f5: Create an initial value JSON string as described in RTO13
-        let initialValueJSONString = createInitialValueJSONString(from: initialValue)
+        let initialValueJSONString = createInitialValueJSONString(from: mapCreate)
 
         // RTO11f6: Create a unique nonce as a random string
         let nonce = generateNonce()
@@ -134,26 +136,27 @@ internal enum ObjectCreationHelpers {
         )
 
         // RTO11f9-13: Set ObjectMessage.operation fields
-        let semantics = ObjectsMapSemantics.lww
-        let operation = ObjectOperation(
+        let sendOperation = ObjectOperation(
             action: .known(.mapCreate),
             objectId: objectId,
-            map: ObjectsMap(
-                semantics: .known(semantics),
-                entries: mapEntries,
-            ),
-            nonce: nonce,
-            initialValue: initialValueJSONString,
+            mapCreateWithObjectId: .init(nonce: nonce, initialValue: initialValueJSONString),
+        )
+
+        // TODO: The spec currently says that publishAndApply should apply the same operation that it sends (RTO20d2), but the operation we send (mapCreateWithObjectId) is not the one that mergeInitialValue expects (mapCreate). For now, we construct a separate operation for local application. We have not yet specified this behaviour: https://github.com/ably/specification/pull/426#discussion_r2849354510
+        let applyOperation = ObjectOperation(
+            action: .known(.mapCreate),
+            objectId: objectId,
+            mapCreate: mapCreate,
         )
 
         // Create the OutboundObjectMessage
         let objectMessage = OutboundObjectMessage(
-            operation: operation,
+            operation: sendOperation,
         )
 
         return MapCreationOperation(
             objectID: objectId,
-            operation: operation,
+            operation: applyOperation,
             objectMessage: objectMessage,
             semantics: semantics,
         )
@@ -161,20 +164,29 @@ internal enum ObjectCreationHelpers {
 
     // MARK: - Private Helper Methods
 
-    /// Creates an initial value JSON string from a PartialObjectOperation, per RTO13.
-    private static func createInitialValueJSONString(from initialValue: PartialObjectOperation) -> String {
-        // RTO13b: Encode the initial value using OM4 encoding
-        let partialWireObjectOperation = initialValue.toWire(format: .json)
-        let jsonObject = partialWireObjectOperation.toWireObject.mapValues { wireValue in
+    /// Creates an initial value JSON string from a CounterCreate, per RTO12f13.
+    private static func createInitialValueJSONString(from counterCreate: CounterCreate) -> String {
+        let wireCounterCreate = counterCreate.toWire()
+        return createInitialValueJSONString(wireObject: wireCounterCreate.toWireObject)
+    }
+
+    /// Creates an initial value JSON string from a MapCreate, per RTO11f15.
+    private static func createInitialValueJSONString(from mapCreate: MapCreate) -> String {
+        let wireMapCreate = mapCreate.toWire(format: .json)
+        return createInitialValueJSONString(wireObject: wireMapCreate.toWireObject)
+    }
+
+    /// Encodes a wire object dictionary to a JSON string for use as an initial value.
+    private static func createInitialValueJSONString(wireObject: [String: WireValue]) -> String {
+        let jsonObject: [String: JSONValue] = wireObject.mapValues { wireValue in
             do {
                 return try wireValue.toJSONValue
             } catch {
-                // By using `format: .json` we've requested a type that should be JSON-encodable, so if it isn't then it's a programmer error. (We can't reason about it statically though because of our choice to use a general-purpose WireValue type; maybe could improve upon this in the future.)
+                // By using `format: .json` we've requested a type that should be JSON-encodable, so if it isn't then it's a programmer error.
                 preconditionFailure("Failed to convert WireValue \(wireValue) to JSONValue when encoding initialValue")
             }
         }
 
-        // RTO13c
         return JSONObjectOrArray.object(jsonObject).toJSONString
     }
 

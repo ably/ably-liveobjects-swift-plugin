@@ -122,9 +122,9 @@ internal final class InternalDefaultLiveCounter: Sendable {
                     action: .known(.counterInc),
                     // RTLC12e3
                     objectId: mutableState.liveObjectMutableState.objectID,
-                    counterOp: .init(
+                    counterInc: .init(
                         // RTLC12e4
-                        amount: .init(value: amount),
+                        number: .init(value: amount),
                     ),
                 ),
             )
@@ -230,7 +230,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
     }
 
     /// Test-only method to apply a COUNTER_INC operation, per RTLC9.
-    internal func testsOnly_applyCounterIncOperation(_ operation: WireObjectsCounterOp?) -> LiveObjectUpdate<DefaultLiveCounterUpdate> {
+    internal func testsOnly_applyCounterIncOperation(_ operation: CounterInc?) -> LiveObjectUpdate<DefaultLiveCounterUpdate> {
         mutableStateMutex.withSync { mutableState in
             mutableState.applyCounterIncOperation(operation)
         }
@@ -354,8 +354,8 @@ internal final class InternalDefaultLiveCounter: Sendable {
         internal mutating func mergeInitialValue(from operation: ObjectOperation) -> LiveObjectUpdate<DefaultLiveCounterUpdate> {
             let update: LiveObjectUpdate<DefaultLiveCounterUpdate>
 
-            // RTLC10a: Add ObjectOperation.counter.count to data, if it exists
-            if let operationCount = operation.counter?.count?.doubleValue {
+            // RTLC10a: Add ObjectOperation.counterCreate.count to data, if it exists
+            if let operationCount = operation.counterCreate?.count?.doubleValue {
                 data += operationCount
                 // RTLC10c
                 update = .update(DefaultLiveCounterUpdate(amount: operationCount))
@@ -407,7 +407,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
                 liveObjectMutableState.emit(update, on: userCallbackQueue)
             case .known(.counterInc):
                 // RTLC7d2
-                let update = applyCounterIncOperation(operation.counterOp)
+                let update = applyCounterIncOperation(operation.counterInc)
                 // RTLC7d2a
                 liveObjectMutableState.emit(update, on: userCallbackQueue)
             case .known(.objectDelete):
@@ -445,14 +445,14 @@ internal final class InternalDefaultLiveCounter: Sendable {
         }
 
         /// Applies a `COUNTER_INC` operation, per RTLC9.
-        internal mutating func applyCounterIncOperation(_ operation: WireObjectsCounterOp?) -> LiveObjectUpdate<DefaultLiveCounterUpdate> {
+        internal mutating func applyCounterIncOperation(_ operation: CounterInc?) -> LiveObjectUpdate<DefaultLiveCounterUpdate> {
             guard let operation else {
                 // RTL9e
                 return .noop
             }
 
             // RTLC9b, RTLC9d
-            let amount = operation.amount.doubleValue
+            let amount = operation.number.doubleValue
             data += amount
             return .update(DefaultLiveCounterUpdate(amount: amount))
         }

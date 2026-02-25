@@ -55,71 +55,70 @@ struct ObjectCreationHelpersTests {
 
             // Then
 
-            // Check that the denormalized properties match those of the ObjectMessage
-            #expect(creationOperation.objectMessage.operation == creationOperation.operation)
-            #expect(creationOperation.objectMessage.operation?.map?.semantics == .known(creationOperation.semantics))
+            // TODO: The operation for local merge and the operation for the wire are different; this is not yet specified: https://github.com/ably/specification/pull/426#discussion_r2849354510
+            // Check that operation (for local merge) has mapCreate, while objectMessage (for wire) has mapCreateWithObjectId
+            #expect(creationOperation.operation.mapCreate?.semantics == .known(creationOperation.semantics))
+            #expect(creationOperation.objectMessage.operation?.mapCreateWithObjectId != nil)
 
-            // Check that the initial value JSON is correctly populated on the initialValue property per RTO11f12, using the RTO11f4 partial ObjectOperation and correctly encoded per RTO13
-            let initialValueString = try #require(creationOperation.operation.initialValue)
+            // Check that the initial value JSON is correctly populated on the mapCreateWithObjectId.initialValue property per RTO11f15, using the RTO11f4 partial ObjectOperation and correctly encoded per RTO13. Per RTO11f15, the initialValue is a JSON string of the MapCreate object itself (not wrapped in a type key).
+            let initialValueString = try #require(creationOperation.objectMessage.operation?.mapCreateWithObjectId?.initialValue)
             let deserializedInitialValue = try #require(try JSONObjectOrArray(jsonString: initialValueString).objectValue)
             #expect(deserializedInitialValue == [
-                "map": [
-                    // RTO11f4a
-                    "semantics": .number(Double(ObjectsMapSemantics.lww.rawValue)),
-                    "entries": [
-                        // RTO11f4c1a
-                        "mapRef": [
-                            "data": [
-                                "objectId": "referencedMapID",
-                            ],
+                // RTO11f4a
+                "semantics": .number(Double(ObjectsMapSemantics.lww.rawValue)),
+                "entries": [
+                    // RTO11f4c1a
+                    "mapRef": [
+                        "data": [
+                            "objectId": "referencedMapID",
                         ],
-                        "counterRef": [
-                            "data": [
-                                "objectId": "referencedCounterID",
-                            ],
+                    ],
+                    "counterRef": [
+                        "data": [
+                            "objectId": "referencedCounterID",
                         ],
-                        // RTO11f4c1b
-                        "jsonArrayKey": [
-                            "data": [
-                                "json": #"["arrayItem1","arrayItem2"]"#,
-                            ],
+                    ],
+                    // RTO11f4c1b
+                    "jsonArrayKey": [
+                        "data": [
+                            "json": #"["arrayItem1","arrayItem2"]"#,
                         ],
-                        "jsonObjectKey": [
-                            "data": [
-                                "json": #"{"nestedKey":"nestedValue"}"#,
-                            ],
+                    ],
+                    "jsonObjectKey": [
+                        "data": [
+                            "json": #"{"nestedKey":"nestedValue"}"#,
                         ],
-                        // RTO11f4c1c
-                        "stringKey": [
-                            "data": [
-                                "string": "stringValue",
-                            ],
+                    ],
+                    // RTO11f4c1c
+                    "stringKey": [
+                        "data": [
+                            "string": "stringValue",
                         ],
-                        // RTO11f4c1d
-                        "numberKey": [
-                            "data": [
-                                "number": 42.5,
-                            ],
+                    ],
+                    // RTO11f4c1d
+                    "numberKey": [
+                        "data": [
+                            "number": 42.5,
                         ],
-                        // RTO11f4c1e
-                        "booleanKey": [
-                            "data": [
-                                "boolean": true,
-                            ],
+                    ],
+                    // RTO11f4c1e
+                    "booleanKey": [
+                        "data": [
+                            "boolean": true,
                         ],
-                        // RTO11f4c1f
-                        "dataKey": [
-                            "data": [
-                                "bytes": .string(Data([0x01, 0x02, 0x03]).base64EncodedString()),
-                            ],
+                    ],
+                    // RTO11f4c1f
+                    "dataKey": [
+                        "data": [
+                            "bytes": .string(Data([0x01, 0x02, 0x03]).base64EncodedString()),
                         ],
                     ],
                 ],
             ])
 
-            // Check that the partial ObjectOperation properties are set on the ObjectMessage, per RTO11f13
+            // Check that the local merge operation has the mapCreate properties
 
-            #expect(creationOperation.objectMessage.operation?.map?.semantics == .known(.lww))
+            #expect(creationOperation.operation.mapCreate?.semantics == .known(.lww))
 
             let expectedEntries: [String: ObjectsMapEntry] = [
                 "mapRef": .init(data: .init(objectId: "referencedMapID")),
@@ -131,7 +130,7 @@ struct ObjectCreationHelpersTests {
                 "booleanKey": .init(data: .init(boolean: true)),
                 "dataKey": .init(data: .init(bytes: Data([0x01, 0x02, 0x03]))),
             ]
-            #expect(creationOperation.objectMessage.operation?.map?.entries == expectedEntries)
+            #expect(creationOperation.operation.mapCreate?.entries == expectedEntries)
 
             // Check the other ObjectMessage properties
 
@@ -142,7 +141,7 @@ struct ObjectCreationHelpersTests {
             #expect(try /map:.*@1754042434000/.firstMatch(in: creationOperation.operation.objectId) != nil)
 
             // Check that nonce has been populated per RTO11f11 (we make no assertions about its format or randomness)
-            #expect(creationOperation.operation.nonce != nil)
+            #expect(creationOperation.objectMessage.operation?.mapCreateWithObjectId?.nonce != nil)
         }
 
         // @spec RTO12f2a
@@ -165,22 +164,22 @@ struct ObjectCreationHelpersTests {
 
             // Then
 
-            // Check that the denormalized properties match those of the ObjectMessage
-            #expect(creationOperation.objectMessage.operation == creationOperation.operation)
+            // TODO: The operation for local merge and the operation for the wire are different; this is not yet specified: https://github.com/ably/specification/pull/426#discussion_r2849354510
+            // Check that operation (for local merge) has counterCreate, while objectMessage (for wire) has counterCreateWithObjectId
+            #expect(creationOperation.operation.counterCreate != nil)
+            #expect(creationOperation.objectMessage.operation?.counterCreateWithObjectId != nil)
 
-            // Check that the initial value JSON is correctly populated on the initialValue property per RTO12f10, using the RTO12f2 partial ObjectOperation and correctly encoded per RTO13
-            let initialValueString = try #require(creationOperation.operation.initialValue)
+            // Check that the initial value JSON is correctly populated on the counterCreateWithObjectId.initialValue property per RTO12f13, using the RTO12f2 partial ObjectOperation and correctly encoded per RTO13. Per RTO12f13, the initialValue is a JSON string of the CounterCreate object itself (not wrapped in a type key).
+            let initialValueString = try #require(creationOperation.objectMessage.operation?.counterCreateWithObjectId?.initialValue)
             let deserializedInitialValue = try #require(try JSONObjectOrArray(jsonString: initialValueString).objectValue)
             #expect(deserializedInitialValue == [
-                "counter": [
-                    // RTO12f2a
-                    "count": 10.5,
-                ],
+                // RTO12f2a
+                "count": 10.5,
             ])
 
-            // Check that the partial ObjectOperation properties are set on the ObjectMessage, per RTO12f10
+            // Check that the local merge operation has the counterCreate properties
 
-            #expect(creationOperation.objectMessage.operation?.counter?.count == 10.5)
+            #expect(creationOperation.operation.counterCreate?.count == 10.5)
 
             // Check the other ObjectMessage properties
 
@@ -191,7 +190,7 @@ struct ObjectCreationHelpersTests {
             #expect(try /counter:.*@1754042434000/.firstMatch(in: creationOperation.operation.objectId) != nil)
 
             // Check that nonce has been populated per RTO12f9 (we make no assertions about its format or randomness)
-            #expect(creationOperation.operation.nonce != nil)
+            #expect(creationOperation.objectMessage.operation?.counterCreateWithObjectId?.nonce != nil)
         }
     }
 

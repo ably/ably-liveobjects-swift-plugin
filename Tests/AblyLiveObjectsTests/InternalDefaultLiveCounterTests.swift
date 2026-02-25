@@ -256,7 +256,7 @@ struct InternalDefaultLiveCounterTests {
             // Apply merge operation with no count
             let operation = TestFactories.objectOperation(
                 action: .known(.counterCreate),
-                counter: nil, // Test value - must be nil
+                counterCreate: nil, // Test value - must be nil
             )
             let update = internalQueue.ably_syncNoDeadlock {
                 counter.nosync_mergeInitialValue(from: operation)
@@ -349,18 +349,18 @@ struct InternalDefaultLiveCounterTests {
         @Test(
             arguments: [
                 (
-                    operation: TestFactories.counterOp(amount: 10),
+                    operation: TestFactories.counterInc(number: 10),
                     expectedValue: 15.0, // 5 + 10
                     expectedUpdate: .update(.init(amount: 10)) // RTLC9d
                 ),
                 (
-                    operation: nil as WireObjectsCounterOp?,
+                    operation: nil as CounterInc?,
                     expectedValue: 5.0, // unchanged
                     expectedUpdate: .noop // RTLC9e
                 ),
-            ] as [(operation: WireObjectsCounterOp?, expectedValue: Double, expectedUpdate: LiveObjectUpdate<DefaultLiveCounterUpdate>)],
+            ] as [(operation: CounterInc?, expectedValue: Double, expectedUpdate: LiveObjectUpdate<DefaultLiveCounterUpdate>)],
         )
-        func addsAmountToData(operation: WireObjectsCounterOp?, expectedValue: Double, expectedUpdate: LiveObjectUpdate<DefaultLiveCounterUpdate>) throws {
+        func addsAmountToData(operation: CounterInc?, expectedValue: Double, expectedUpdate: LiveObjectUpdate<DefaultLiveCounterUpdate>) throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
             let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
@@ -403,7 +403,7 @@ struct InternalDefaultLiveCounterTests {
 
             let operation = TestFactories.objectOperation(
                 action: .known(.counterInc),
-                counterOp: TestFactories.counterOp(amount: 10),
+                counterInc: TestFactories.counterInc(number: 10),
             )
             var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
 
@@ -486,7 +486,7 @@ struct InternalDefaultLiveCounterTests {
 
             let operation = TestFactories.objectOperation(
                 action: .known(.counterInc),
-                counterOp: TestFactories.counterOp(amount: 10),
+                counterInc: TestFactories.counterInc(number: 10),
             )
             var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
 
@@ -610,7 +610,7 @@ struct InternalDefaultLiveCounterTests {
                     // RTLC12e3
                     objectId: "counter:test@123",
                     // RTLC12e4
-                    counterOp: WireObjectsCounterOp(amount: NSNumber(value: 10.5)),
+                    counterInc: CounterInc(number: NSNumber(value: 10.5)),
                 ),
             )
             // RTLC12f
@@ -659,7 +659,7 @@ struct InternalDefaultLiveCounterTests {
 
             // RTLC12f
             #expect(publishedMessages.count == 1)
-            #expect(publishedMessages[0].operation?.counterOp?.amount == -10.5 /* i.e. assert the amount gets negated */ )
+            #expect(publishedMessages[0].operation?.counterInc?.number == -10.5 /* i.e. assert the amount gets negated */ )
         }
     }
 }
