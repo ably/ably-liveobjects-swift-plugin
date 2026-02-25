@@ -406,13 +406,21 @@ final class ObjectsHelper: Sendable {
 
     /// Creates a map create REST operation
     func mapCreateRestOp(objectId: String? = nil, nonce: String? = nil, data: [String: JSONValue]? = nil) -> [String: JSONValue] {
-        var opBody: [String: JSONValue] = [
-            "operation": .string(Actions.mapCreate.stringValue),
+        var mapCreate: [String: JSONValue] = [
+            "semantics": .number(0),
         ]
 
         if let data {
-            opBody["data"] = .object(data)
+            // Wrap each entry value in { "data": value } to match v6 format
+            let entries = Dictionary(uniqueKeysWithValues: data.map { key, value in
+                (key, JSONValue.object(["data": value]))
+            })
+            mapCreate["entries"] = .object(entries)
         }
+
+        var opBody: [String: JSONValue] = [
+            "mapCreate": .object(mapCreate),
+        ]
 
         if let objectId {
             opBody["objectId"] = .string(objectId)
@@ -425,9 +433,8 @@ final class ObjectsHelper: Sendable {
     /// Creates a map set REST operation
     func mapSetRestOp(objectId: String, key: String, value: [String: JSONValue]) -> [String: JSONValue] {
         [
-            "operation": .string(Actions.mapSet.stringValue),
             "objectId": .string(objectId),
-            "data": .object([
+            "mapSet": .object([
                 "key": .string(key),
                 "value": .object(value),
             ]),
@@ -437,9 +444,8 @@ final class ObjectsHelper: Sendable {
     /// Creates a map remove REST operation
     func mapRemoveRestOp(objectId: String, key: String) -> [String: JSONValue] {
         [
-            "operation": .string(Actions.mapRemove.stringValue),
             "objectId": .string(objectId),
-            "data": .object([
+            "mapRemove": .object([
                 "key": .string(key),
             ]),
         ]
@@ -447,13 +453,15 @@ final class ObjectsHelper: Sendable {
 
     /// Creates a counter create REST operation
     func counterCreateRestOp(objectId: String? = nil, nonce: String? = nil, number: Double? = nil) -> [String: JSONValue] {
-        var opBody: [String: JSONValue] = [
-            "operation": .string(Actions.counterCreate.stringValue),
-        ]
+        var counterCreate: [String: JSONValue] = [:]
 
         if let number {
-            opBody["data"] = .object(["number": .number(number)])
+            counterCreate["count"] = .number(number)
         }
+
+        var opBody: [String: JSONValue] = [
+            "counterCreate": .object(counterCreate),
+        ]
 
         if let objectId {
             opBody["objectId"] = .string(objectId)
@@ -466,9 +474,8 @@ final class ObjectsHelper: Sendable {
     /// Creates a counter increment REST operation
     func counterIncRestOp(objectId: String, number: Double) -> [String: JSONValue] {
         [
-            "operation": .string(Actions.counterInc.stringValue),
             "objectId": .string(objectId),
-            "data": .object(["number": .number(number)]),
+            "counterInc": .object(["number": .number(number)]),
         ]
     }
 
