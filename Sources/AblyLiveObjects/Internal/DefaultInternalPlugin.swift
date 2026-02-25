@@ -9,7 +9,7 @@ import ObjectiveC.NSObject
 internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.LiveObjectsInternalPluginProtocol {
     private let pluginAPI: _AblyPluginSupportPrivate.PluginAPIProtocol
 
-    internal var compatibleWithLiveObjectsProtocolV6: Bool { true }
+    internal var compatibleWithProtocolV6: Bool { true }
 
     internal init(pluginAPI: _AblyPluginSupportPrivate.PluginAPIProtocol) {
         precondition(
