@@ -73,21 +73,27 @@ internal enum ObjectCreationHelpers {
         )
 
         // RTO12f7-12: Set ObjectMessage.operation fields
-        let operation = ObjectOperation(
+        let sendOperation = ObjectOperation(
+            action: .known(.counterCreate),
+            objectId: objectId,
+            counterCreateWithObjectId: .init(nonce: nonce, initialValue: initialValueJSONString),
+        )
+
+        // TODO: The spec currently says that publishAndApply should apply the same operation that it sends (RTO20d2), but the operation we send (counterCreateWithObjectId) is not the one that mergeInitialValue expects (counterCreate). For now, we construct a separate operation for local application. We have not yet specified this behaviour: https://github.com/ably/specification/pull/426#discussion_r2849354510
+        let applyOperation = ObjectOperation(
             action: .known(.counterCreate),
             objectId: objectId,
             counterCreate: counterCreate,
-            counterCreateWithObjectId: .init(nonce: nonce, initialValue: initialValueJSONString),
         )
 
         // Create the OutboundObjectMessage
         let objectMessage = OutboundObjectMessage(
-            operation: operation,
+            operation: sendOperation,
         )
 
         return CounterCreationOperation(
             objectID: objectId,
-            operation: operation,
+            operation: applyOperation,
             objectMessage: objectMessage,
         )
     }
@@ -130,21 +136,27 @@ internal enum ObjectCreationHelpers {
         )
 
         // RTO11f9-13: Set ObjectMessage.operation fields
-        let operation = ObjectOperation(
+        let sendOperation = ObjectOperation(
+            action: .known(.mapCreate),
+            objectId: objectId,
+            mapCreateWithObjectId: .init(nonce: nonce, initialValue: initialValueJSONString),
+        )
+
+        // TODO: The spec currently says that publishAndApply should apply the same operation that it sends (RTO20d2), but the operation we send (mapCreateWithObjectId) is not the one that mergeInitialValue expects (mapCreate). For now, we construct a separate operation for local application. We have not yet specified this behaviour: https://github.com/ably/specification/pull/426#discussion_r2849354510
+        let applyOperation = ObjectOperation(
             action: .known(.mapCreate),
             objectId: objectId,
             mapCreate: mapCreate,
-            mapCreateWithObjectId: .init(nonce: nonce, initialValue: initialValueJSONString),
         )
 
         // Create the OutboundObjectMessage
         let objectMessage = OutboundObjectMessage(
-            operation: operation,
+            operation: sendOperation,
         )
 
         return MapCreationOperation(
             objectID: objectId,
-            operation: operation,
+            operation: applyOperation,
             objectMessage: objectMessage,
             semantics: semantics,
         )

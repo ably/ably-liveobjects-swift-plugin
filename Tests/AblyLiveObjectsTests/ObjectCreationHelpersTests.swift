@@ -55,12 +55,13 @@ struct ObjectCreationHelpersTests {
 
             // Then
 
-            // Check that the denormalized properties match those of the ObjectMessage
-            #expect(creationOperation.objectMessage.operation == creationOperation.operation)
-            #expect(creationOperation.objectMessage.operation?.mapCreate?.semantics == .known(creationOperation.semantics))
+            // TODO: The operation for local merge and the operation for the wire are different; this is not yet specified: https://github.com/ably/specification/pull/426#discussion_r2849354510
+            // Check that operation (for local merge) has mapCreate, while objectMessage (for wire) has mapCreateWithObjectId
+            #expect(creationOperation.operation.mapCreate?.semantics == .known(creationOperation.semantics))
+            #expect(creationOperation.objectMessage.operation?.mapCreateWithObjectId != nil)
 
             // Check that the initial value JSON is correctly populated on the mapCreateWithObjectId.initialValue property per RTO11f12, using the RTO11f4 partial ObjectOperation and correctly encoded per RTO13
-            let initialValueString = try #require(creationOperation.operation.mapCreateWithObjectId?.initialValue)
+            let initialValueString = try #require(creationOperation.objectMessage.operation?.mapCreateWithObjectId?.initialValue)
             let deserializedInitialValue = try #require(try JSONObjectOrArray(jsonString: initialValueString).objectValue)
             #expect(deserializedInitialValue == [
                 "mapCreate": [
@@ -117,9 +118,9 @@ struct ObjectCreationHelpersTests {
                 ],
             ])
 
-            // Check that the partial ObjectOperation properties are set on the ObjectMessage, per RTO11f13
+            // Check that the local merge operation has the mapCreate properties
 
-            #expect(creationOperation.objectMessage.operation?.mapCreate?.semantics == .known(.lww))
+            #expect(creationOperation.operation.mapCreate?.semantics == .known(.lww))
 
             let expectedEntries: [String: ObjectsMapEntry] = [
                 "mapRef": .init(data: .init(objectId: "referencedMapID")),
@@ -131,7 +132,7 @@ struct ObjectCreationHelpersTests {
                 "booleanKey": .init(data: .init(boolean: true)),
                 "dataKey": .init(data: .init(bytes: Data([0x01, 0x02, 0x03]))),
             ]
-            #expect(creationOperation.objectMessage.operation?.mapCreate?.entries == expectedEntries)
+            #expect(creationOperation.operation.mapCreate?.entries == expectedEntries)
 
             // Check the other ObjectMessage properties
 
@@ -142,7 +143,7 @@ struct ObjectCreationHelpersTests {
             #expect(try /map:.*@1754042434000/.firstMatch(in: creationOperation.operation.objectId) != nil)
 
             // Check that nonce has been populated per RTO11f11 (we make no assertions about its format or randomness)
-            #expect(creationOperation.operation.mapCreateWithObjectId?.nonce != nil)
+            #expect(creationOperation.objectMessage.operation?.mapCreateWithObjectId?.nonce != nil)
         }
 
         // @spec RTO12f2a
@@ -165,11 +166,13 @@ struct ObjectCreationHelpersTests {
 
             // Then
 
-            // Check that the denormalized properties match those of the ObjectMessage
-            #expect(creationOperation.objectMessage.operation == creationOperation.operation)
+            // TODO: The operation for local merge and the operation for the wire are different; this is not yet specified: https://github.com/ably/specification/pull/426#discussion_r2849354510
+            // Check that operation (for local merge) has counterCreate, while objectMessage (for wire) has counterCreateWithObjectId
+            #expect(creationOperation.operation.counterCreate != nil)
+            #expect(creationOperation.objectMessage.operation?.counterCreateWithObjectId != nil)
 
             // Check that the initial value JSON is correctly populated on the counterCreateWithObjectId.initialValue property per RTO12f10, using the RTO12f2 partial ObjectOperation and correctly encoded per RTO13
-            let initialValueString = try #require(creationOperation.operation.counterCreateWithObjectId?.initialValue)
+            let initialValueString = try #require(creationOperation.objectMessage.operation?.counterCreateWithObjectId?.initialValue)
             let deserializedInitialValue = try #require(try JSONObjectOrArray(jsonString: initialValueString).objectValue)
             #expect(deserializedInitialValue == [
                 "counterCreate": [
@@ -178,9 +181,9 @@ struct ObjectCreationHelpersTests {
                 ],
             ])
 
-            // Check that the partial ObjectOperation properties are set on the ObjectMessage, per RTO12f10
+            // Check that the local merge operation has the counterCreate properties
 
-            #expect(creationOperation.objectMessage.operation?.counterCreate?.count == 10.5)
+            #expect(creationOperation.operation.counterCreate?.count == 10.5)
 
             // Check the other ObjectMessage properties
 
@@ -191,7 +194,7 @@ struct ObjectCreationHelpersTests {
             #expect(try /counter:.*@1754042434000/.firstMatch(in: creationOperation.operation.objectId) != nil)
 
             // Check that nonce has been populated per RTO12f9 (we make no assertions about its format or randomness)
-            #expect(creationOperation.operation.counterCreateWithObjectId?.nonce != nil)
+            #expect(creationOperation.objectMessage.operation?.counterCreateWithObjectId?.nonce != nil)
         }
     }
 
