@@ -477,7 +477,7 @@ internal struct WireObjectDelete: Equatable {
 }
 
 extension WireObjectDelete: WireObjectCodable {
-    internal init(wireObject: [String: WireValue]) throws(ARTErrorInfo) {
+    internal init(wireObject _: [String: WireValue]) throws(ARTErrorInfo) {
         // No fields to decode
     }
 

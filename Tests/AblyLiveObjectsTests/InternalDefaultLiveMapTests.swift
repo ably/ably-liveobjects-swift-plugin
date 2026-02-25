@@ -1574,7 +1574,7 @@ struct InternalDefaultLiveMapTests {
                     objectId: "map:test@123",
                     mapRemove: MapRemove(
                         // RTLM21e4
-                        key: "testKey"
+                        key: "testKey",
                     ),
                 ),
             )
