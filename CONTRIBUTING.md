@@ -21,9 +21,15 @@ Either:
 
 ### Running only the unit tests
 
-There is a test plan called `UnitTests` which will run only the unit tests. These tests are very quick to execute, so it's a useful option to have for quick feedback when developing.
+There is a test plan called `UnitTests` which excludes tests tagged with `.integration`. These tests are very quick to execute, so it's a useful option to have for quick feedback when developing.
 
-Here's how to set this test plan as the _active test plan_ (the test plan which ⌘U will run):
+From the command line:
+
+```sh
+swift run BuildTool test-library --platform macOS --only-unit-tests
+```
+
+Or in Xcode, set the `UnitTests` test plan as the _active test plan_ (the test plan which ⌘U will run):
 
 ![Screenshot showing how to activate the UnitTests test plan](/images/unit-tests-test-plan-screenshot.png)
 

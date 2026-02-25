@@ -3,6 +3,7 @@ import Ably
 @testable import AblyLiveObjects
 import Testing
 
+@Suite(.tags(.integration))
 struct AblyLiveObjectsTests {
     @Test
     func objectsProperty() async throws {
