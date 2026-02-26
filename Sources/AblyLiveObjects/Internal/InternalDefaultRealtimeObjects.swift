@@ -513,6 +513,11 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
                 transition(to: .syncing(.init(bufferedObjectOperations: [], syncSequence: nil)), userCallbackQueue: userCallbackQueue)
             }
 
+            // RTO4d: Clear buffered object operations without applying them
+            if case let .syncing(syncingData) = state {
+                syncingData.bufferedObjectOperations = []
+            }
+
             // We only care about the case where HAS_OBJECTS is not set (RTO4b); if it is set then we're going to shortly receive an OBJECT_SYNC instead (RTO4a)
             guard !hasObjects else {
                 return
@@ -523,7 +528,7 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
 
             // I have, for now, not directly implemented the "perform the actions for object sync completion" of RTO4b4 since my implementation doesn't quite match the model given there; here you only have a SyncObjectsPool if you have an OBJECT_SYNC in progress, which you might not have upon receiving an ATTACHED. Instead I've just implemented what seem like the relevant side effects. Can revisit this if "the actions for object sync completion" get more complex.
 
-            // RTO4b3, RTO4b4, RTO4b5, RTO5c3, RTO5c4, RTO5c5, RTO5c8
+            // RTO4b3, RTO4b4, RTO5c3, RTO5c4, RTO5c5, RTO5c8
             transition(to: .synced, userCallbackQueue: userCallbackQueue)
         }
 
@@ -558,9 +563,8 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
                 // Figure out whether to continue any existing sync sequence or start a new one
                 let isNewSyncSequence = syncCursor == nil || syncingData.syncSequence?.id != syncCursor?.sequenceID
                 if isNewSyncSequence {
-                    // RTO5a2a, RTO5a2b: new sequence started, discard previous. Else we continue the existing sequence per RTO5a3
+                    // RTO5a2a: new sequence started, discard previous. Else we continue the existing sequence per RTO5a3
                     syncingData.syncSequence = nil
-                    syncingData.bufferedObjectOperations = []
                 }
             }
 
