@@ -309,7 +309,7 @@ internal struct ObjectsPool {
                 logger.log("Creating new object with ID: \(syncObjectsPoolEntry.state.objectId)", level: .debug)
 
                 // RTO5c1b1: Create a new LiveObject using the data from ObjectState and add it to the internal ObjectsPool:
-                let newEntry: Entry?
+                let newEntry: Entry
 
                 if syncObjectsPoolEntry.state.counter != nil {
                     // RTO5c1b1a: If ObjectState.counter is present, create a zero-value LiveCounter,
@@ -345,15 +345,12 @@ internal struct ObjectsPool {
                     )
                     newEntry = .map(map)
                 } else {
-                    // RTO5c1b1c: Otherwise, log a warning that an unsupported object state message has been received, and discard the current ObjectState without taking any action
-                    logger.log("Unsupported object state message received for objectId: \(syncObjectsPoolEntry.state.objectId)", level: .warn)
-                    newEntry = nil
+                    // See SyncObjectsPool.Entry.state documentation.
+                    preconditionFailure("SyncObjectsPool entry for objectId \(syncObjectsPoolEntry.state.objectId) has neither counter nor map")
                 }
 
-                if let newEntry {
-                    // Note that we will never replace the root object here, and thus never break the RTO3b invariant that the root object is always a map. This is because the pool always contains a root object and thus we always go through the RTO5c1a branch of the `if` above.
-                    entries[syncObjectsPoolEntry.state.objectId] = newEntry
-                }
+                // Note that we will never replace the root object here, and thus never break the RTO3b invariant that the root object is always a map. This is because the pool always contains a root object and thus we always go through the RTO5c1a branch of the `if` above.
+                entries[syncObjectsPoolEntry.state.objectId] = newEntry
             }
         }
 
