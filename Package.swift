@@ -20,11 +20,11 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/ably/ably-cocoa.git",
-            revision: "a4f1fae0e218099b2ca317b86547e237841f3a98",
+            revision: "932846e0be7657f3571f4671261b8ccac1ceb818",
         ),
         .package(
             url: "https://github.com/ably/ably-cocoa-plugin-support.git",
-            revision: "7d0197edb97e812024e6f2038e6d8309c28438d2",
+            revision: "242fac1d4a829c8a63f9b3f96a71809e1f6eeffc",
         ),
         .package(
             url: "https://github.com/apple/swift-argument-parser",
