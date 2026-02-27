@@ -1,3 +1,4 @@
+@preconcurrency import Ably.Private
 import Ably
 @testable import AblyLiveObjects
 import Testing
@@ -121,6 +122,225 @@ func waitForObjectSync(_ realtime: ARTRealtime) async throws {
                 testProxyTransport.setListenerAfterProcessingIncomingMessage(nil)
                 continuation.resume()
             }
+        }
+    }
+}
+
+// MARK: - ARTProtocolMessage test-only extension
+
+extension ARTProtocolMessage {
+    /// Test-only: extract InboundObjectMessages from the protocol message's state array.
+    ///
+    /// The `state` property on `ARTProtocolMessage` is behind `#ifdef ABLY_SUPPORTS_PLUGINS`
+    /// in a private header, so it's not visible to Swift consumers. We use KVC to access it.
+    var testsOnly_inboundObjectMessages: [InboundObjectMessage] {
+        guard let stateArray = value(forKey: "state") as? [AnyObject] else {
+            return []
+        }
+        return stateArray.compactMap { item -> InboundObjectMessage? in
+            guard let box = item as? DefaultInternalPlugin.ObjectMessageBox<InboundObjectMessage>
+            else { return nil }
+            return box.objectMessage
+        }
+    }
+}
+
+// MARK: - Echo/ACK interceptors for apply-on-ACK tests
+
+/// Intercepts OBJECT echo messages (action 19) arriving from Realtime, holding them so tests can
+/// verify that apply-on-ACK works independently of the echo. Uses `setBeforeIncomingMessageModifier`
+/// on `TestProxyTransport` to suppress OBJECT messages and store them for later replay.
+private final class EchoInterceptor: @unchecked Sendable {
+    private let transport: TestProxyTransport
+    private let channel: ARTRealtimeChannel
+    private let lock = NSLock()
+    private var _heldEchoes: [ARTProtocolMessage] = []
+    private var echoContinuation: CheckedContinuation<Void, Never>?
+
+    var heldEchoes: [ARTProtocolMessage] {
+        lock.withLock { _heldEchoes }
+    }
+
+    init(client: ARTRealtime, channel: ARTRealtimeChannel) {
+        self.transport = client.internal.transport as! TestProxyTransport
+        self.channel = channel
+
+        transport.setBeforeIncomingMessageModifier { [weak self] message in
+            guard let self else { return message }
+            if message.action == .object {
+                lock.withLock {
+                    _heldEchoes.append(message)
+                    echoContinuation?.resume()
+                    echoContinuation = nil
+                }
+                return nil // suppress the echo
+            }
+            return message
+        }
+    }
+
+    /// Waits until at least one new echo has been intercepted since the last
+    /// ``releaseAll()`` / ``releaseFirst()`` (or since construction).
+    func waitForEcho() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.withLock {
+                if !_heldEchoes.isEmpty {
+                    continuation.resume()
+                } else {
+                    echoContinuation = continuation
+                }
+            }
+        }
+    }
+
+    /// Waits until at least `count` echoes have been intercepted.
+    func waitForEchoCount(_ count: Int) async {
+        while true {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                lock.withLock {
+                    if _heldEchoes.count >= count {
+                        continuation.resume()
+                    } else {
+                        echoContinuation = continuation
+                    }
+                }
+            }
+            let current = lock.withLock { _heldEchoes.count }
+            if current >= count { break }
+        }
+    }
+
+    /// Replays all held echo messages through the channel's internal message handler.
+    func releaseAll() async {
+        let echoes = lock.withLock {
+            let e = _heldEchoes
+            _heldEchoes.removeAll()
+            return e
+        }
+        for echo in echoes {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                channel.internal.queue.async {
+                    self.channel.internal.onChannelMessage(echo)
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    /// Releases only the first held echo message.
+    func releaseFirst() async {
+        let echo: ARTProtocolMessage? = lock.withLock {
+            _heldEchoes.isEmpty ? nil : _heldEchoes.removeFirst()
+        }
+        guard let echo else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            channel.internal.queue.async {
+                self.channel.internal.onChannelMessage(echo)
+                continuation.resume()
+            }
+        }
+    }
+
+    /// Removes the interceptor, restoring normal echo handling.
+    func restore() {
+        transport.setBeforeIncomingMessageModifier(nil)
+    }
+}
+
+/// Intercepts ACK messages (action 1) arriving from Realtime, holding them so tests can control
+/// the timing of ACK delivery. Uses `setBeforeIncomingMessageModifier` on `TestProxyTransport`.
+private final class AckInterceptor: @unchecked Sendable {
+    private let transport: TestProxyTransport
+    private let client: ARTRealtime
+    private let lock = NSLock()
+    private var _heldAcks: [ARTProtocolMessage] = []
+    private var ackContinuation: CheckedContinuation<Void, Never>?
+
+    var heldAcks: [ARTProtocolMessage] {
+        lock.withLock { _heldAcks }
+    }
+
+    init(client: ARTRealtime) {
+        self.client = client
+        self.transport = client.internal.transport as! TestProxyTransport
+
+        transport.setBeforeIncomingMessageModifier { [weak self] message in
+            guard let self else { return message }
+            if message.action == .ack {
+                lock.withLock {
+                    _heldAcks.append(message)
+                    ackContinuation?.resume()
+                    ackContinuation = nil
+                }
+                return nil // suppress the ACK
+            }
+            return message
+        }
+    }
+
+    /// Waits until at least one ACK has been intercepted.
+    func waitForAck() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.withLock {
+                if !_heldAcks.isEmpty {
+                    continuation.resume()
+                } else {
+                    ackContinuation = continuation
+                }
+            }
+        }
+    }
+
+    /// Releases all held ACK messages by feeding them back through the transport's receive method.
+    /// Must be called from outside the internal queue (dispatches onto it).
+    func releaseAll() async {
+        let acks = lock.withLock {
+            let a = _heldAcks
+            _heldAcks.removeAll()
+            return a
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            client.internal.queue.async {
+                // Temporarily clear the modifier so we can replay without re-intercepting
+                self.transport.setBeforeIncomingMessageModifier(nil)
+                for ack in acks {
+                    self.transport.receive(ack)
+                }
+                // Restore the interceptor
+                self.transport.setBeforeIncomingMessageModifier { [weak self] message in
+                    guard let self else { return message }
+                    if message.action == .ack {
+                        self.lock.withLock {
+                            self._heldAcks.append(message)
+                            self.ackContinuation?.resume()
+                            self.ackContinuation = nil
+                        }
+                        return nil
+                    }
+                    return message
+                }
+                continuation.resume()
+            }
+        }
+    }
+
+    /// Removes the interceptor, restoring normal ACK handling.
+    func restore() {
+        transport.setBeforeIncomingMessageModifier(nil)
+    }
+}
+
+/// Injects an ATTACHED protocol message into the channel, optionally with the HAS_OBJECTS flag.
+/// This triggers a sync sequence when `hasObjects` is true.
+private func injectAttachedMessage(channel: ARTRealtimeChannel, hasObjects: Bool) async {
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        channel.internal.queue.async {
+            let pm = ARTProtocolMessage()
+            pm.action = .attached
+            pm.channel = channel.name
+            pm.flags = hasObjects ? Int64(1 << 7) : 0 // ARTProtocolMessageFlagHasObjects
+            channel.internal.onChannelMessage(pm)
+            continuation.resume()
         }
     }
 }
@@ -420,51 +640,21 @@ private struct ObjectsIntegrationTests {
                         let root = ctx.root
                         let objects = ctx.objects
 
-                        // Create the promise first, before the operations that will trigger it
-                        let objectsCreatedPromiseUpdates1 = try root.updates()
-                        let objectsCreatedPromiseUpdates2 = try root.updates()
-                        async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            group.addTask {
-                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, "counter")
-                            }
-                            group.addTask {
-                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, "map")
-                            }
-                            while try await group.next() != nil {}
-                        }
-
                         // MAP_CREATE
                         let map = try await objects.createMap(entries: ["shouldStay": "foo", "shouldDelete": "bar"])
                         // COUNTER_CREATE
                         let counter = try await objects.createCounter(count: 1)
 
-                        // Set the values and await the promise
+                        // Set the values
                         async let setMapPromise: Void = root.set(key: "map", value: .liveMap(map))
                         async let setCounterPromise: Void = root.set(key: "counter", value: .liveCounter(counter))
-                        _ = try await (setMapPromise, setCounterPromise, objectsCreatedPromise)
+                        _ = try await (setMapPromise, setCounterPromise)
 
-                        // Create the promise first, before the operations that will trigger it
-                        let operationsAppliedPromiseUpdates1 = try map.updates()
-                        let operationsAppliedPromiseUpdates2 = try map.updates()
-                        let operationsAppliedPromiseUpdates3 = try counter.updates()
-                        async let operationsAppliedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            group.addTask {
-                                await waitForMapKeyUpdate(operationsAppliedPromiseUpdates1, "anotherKey")
-                            }
-                            group.addTask {
-                                await waitForMapKeyUpdate(operationsAppliedPromiseUpdates2, "shouldDelete")
-                            }
-                            group.addTask {
-                                await waitForCounterUpdate(operationsAppliedPromiseUpdates3)
-                            }
-                            while try await group.next() != nil {}
-                        }
-
-                        // Perform the operations and await the promise
+                        // Perform the operations
                         async let setAnotherKeyPromise: Void = map.set(key: "anotherKey", value: "baz")
                         async let removeKeyPromise: Void = map.remove(key: "shouldDelete")
                         async let incrementPromise: Void = counter.increment(amount: 10)
-                        _ = try await (setAnotherKeyPromise, removeKeyPromise, incrementPromise, operationsAppliedPromise)
+                        _ = try await (setAnotherKeyPromise, removeKeyPromise, incrementPromise)
 
                         // create a new client and check it syncs with the aggregated data
                         let client2 = try await realtimeWithObjects(options: ctx.clientOptions)
@@ -497,26 +687,13 @@ private struct ObjectsIntegrationTests {
                         let channel = ctx.channel
                         let client = ctx.client
 
-                        // Create the promise first, before the operations that will trigger it
-                        let objectsCreatedPromiseUpdates1 = try root.updates()
-                        let objectsCreatedPromiseUpdates2 = try root.updates()
-                        async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            group.addTask {
-                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, "counter")
-                            }
-                            group.addTask {
-                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, "map")
-                            }
-                            while try await group.next() != nil {}
-                        }
-
                         let map = try await objects.createMap()
                         let counter = try await objects.createCounter()
 
-                        // Set the values and await the promise
+                        // Set the values
                         async let setMapPromise: Void = root.set(key: "map", value: .liveMap(map))
                         async let setCounterPromise: Void = root.set(key: "counter", value: .liveCounter(counter))
-                        _ = try await (setMapPromise, setCounterPromise, objectsCreatedPromise)
+                        _ = try await (setMapPromise, setCounterPromise)
 
                         try await channel.detachAsync()
 
@@ -1223,12 +1400,8 @@ private struct ObjectsIntegrationTests {
                         for (i, increment) in increments.enumerated() {
                             expectedCounterValue += Double(increment)
 
-                            let counterUpdatedPromiseUpdates = try counter.updates()
-                            async let counterUpdatedPromise: Void = waitForCounterUpdate(counterUpdatedPromiseUpdates)
-
                             // Use the public API to increment - this will send COUNTER_INC internally
                             try await counter.increment(amount: Double(increment))
-                            _ = await counterUpdatedPromise
 
                             #expect(try counter.value == expectedCounterValue, "Check counter at \"\(counterKey)\" key in root has correct value after \(i + 1) COUNTER_INC ops")
                         }
@@ -1323,12 +1496,8 @@ private struct ObjectsIntegrationTests {
                         #expect(try #require(map.get(key: "shouldStay")?.stringValue) == "foo", "Check map at \"\(mapKey)\" key in root has correct \"shouldStay\" value before MAP_REMOVE")
                         #expect(try #require(map.get(key: "shouldDelete")?.stringValue) == "bar", "Check map at \"\(mapKey)\" key in root has correct \"shouldDelete\" value before MAP_REMOVE")
 
-                        let keyRemovedPromiseUpdates = try map.updates()
-                        async let keyRemovedPromise: Void = waitForMapKeyUpdate(keyRemovedPromiseUpdates, "shouldDelete")
-
                         // Send MAP_REMOVE op using the public API
                         try await map.remove(key: "shouldDelete")
-                        _ = await keyRemovedPromise
 
                         // Check map has correct keys after MAP_REMOVE ops
                         #expect(try map.size == 1, "Check map at \"\(mapKey)\" key in root has correct number of keys after MAP_REMOVE")
@@ -2404,11 +2573,7 @@ private struct ObjectsIntegrationTests {
                         for (i, increment) in increments.enumerated() {
                             expectedCounterValue += increment
 
-                            let counterUpdatedPromiseUpdates = try counter.updates()
-                            async let counterUpdatedPromise: Void = waitForCounterUpdate(counterUpdatedPromiseUpdates)
-
                             try await counter.increment(amount: increment)
-                            _ = await counterUpdatedPromise
 
                             #expect(try counter.value == expectedCounterValue, "Check counter has correct value after \(i + 1) LiveCounter.increment calls")
                         }
@@ -2488,11 +2653,7 @@ private struct ObjectsIntegrationTests {
                         for (i, decrement) in decrements.enumerated() {
                             expectedCounterValue -= decrement
 
-                            let counterUpdatedPromiseUpdates = try counter.updates()
-                            async let counterUpdatedPromise: Void = waitForCounterUpdate(counterUpdatedPromiseUpdates)
-
                             try await counter.decrement(amount: decrement)
-                            _ = await counterUpdatedPromise
 
                             #expect(try counter.value == expectedCounterValue, "Check counter has correct value after \(i + 1) LiveCounter.decrement calls")
                         }
@@ -2542,16 +2703,6 @@ private struct ObjectsIntegrationTests {
                     action: { ctx in
                         let root = ctx.root
 
-                        let keysUpdatedPromiseUpdates = try primitiveKeyData.map { _ in try root.updates() }
-                        async let keysUpdatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            for (i, keyData) in primitiveKeyData.enumerated() {
-                                group.addTask {
-                                    await waitForMapKeyUpdate(keysUpdatedPromiseUpdates[i], keyData.key)
-                                }
-                            }
-                            while try await group.next() != nil {}
-                        }
-
                         _ = try await withThrowingTaskGroup(of: Void.self) { group in
                             for keyData in primitiveKeyData {
                                 group.addTask {
@@ -2560,7 +2711,6 @@ private struct ObjectsIntegrationTests {
                             }
                             while try await group.next() != nil {}
                         }
-                        _ = try await keysUpdatedPromise
 
                         // Check everything is applied correctly
                         for keyData in primitiveKeyData {
@@ -2623,21 +2773,9 @@ private struct ObjectsIntegrationTests {
                         let counter = try #require(root.get(key: "counter")?.liveCounterValue)
                         let map = try #require(root.get(key: "map")?.liveMapValue)
 
-                        let keysUpdatedPromiseUpdates1 = try root.updates()
-                        let keysUpdatedPromiseUpdates2 = try root.updates()
-                        async let keysUpdatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            group.addTask {
-                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates1, "counter2")
-                            }
-                            group.addTask {
-                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates2, "map2")
-                            }
-                            while try await group.next() != nil {}
-                        }
-
                         async let setCounter2Promise: Void = root.set(key: "counter2", value: .liveCounter(counter))
                         async let setMap2Promise: Void = root.set(key: "map2", value: .liveMap(map))
-                        _ = try await (setCounter2Promise, setMap2Promise, keysUpdatedPromise)
+                        _ = try await (setCounter2Promise, setMap2Promise)
 
                         let counter2 = try #require(root.get(key: "counter2")?.liveCounterValue)
                         let map2 = try #require(root.get(key: "map2")?.liveMapValue)
@@ -2705,21 +2843,9 @@ private struct ObjectsIntegrationTests {
 
                         let map = try #require(root.get(key: "map")?.liveMapValue)
 
-                        let keysUpdatedPromiseUpdates1 = try map.updates()
-                        let keysUpdatedPromiseUpdates2 = try map.updates()
-                        async let keysUpdatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
-                            group.addTask {
-                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates1, "foo")
-                            }
-                            group.addTask {
-                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates2, "bar")
-                            }
-                            while try await group.next() != nil {}
-                        }
-
                         async let removeFooPromise: Void = map.remove(key: "foo")
                         async let removeBarPromise: Void = map.remove(key: "bar")
-                        _ = try await (removeFooPromise, removeBarPromise, keysUpdatedPromise)
+                        _ = try await (removeFooPromise, removeBarPromise)
 
                         #expect(try map.get(key: "foo") == nil, "Check can remove a key from a root via a LiveMap.remove call")
                         #expect(try map.get(key: "bar") == nil, "Check can remove a key from a root via a LiveMap.remove call")
@@ -2821,9 +2947,11 @@ private struct ObjectsIntegrationTests {
                     action: { ctx in
                         let objects = ctx.objects
 
-                        // prevent publishing of ops to realtime so we guarantee that the initial value doesn't come from a CREATE op
+                        // prevent publishing of ops to realtime so we guarantee that the initial value comes from local apply-on-ACK, not from a server echo
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in })
+                        internallyTypedObjects.testsOnly_overridePublish(with: { objectMessages in
+                            PublishResult(serials: objectMessages.map { _ in "fake-serial" })
+                        })
 
                         let counter = try await objects.createCounter(count: 1)
                         #expect(try counter.value == 1, "Check counter has expected initial value")
@@ -2858,12 +2986,15 @@ private struct ObjectsIntegrationTests {
                             } catch {
                                 throw LiveObjectsError.other(error).toARTErrorInfo()
                             }
+                            return PublishResult(serials: objectMessages.map { _ in "fake-serial" })
                         })
 
                         let counter = try await objects.createCounter(count: 1)
 
-                        // Counter should be created with forged initial value instead of the actual one
-                        #expect(try counter.value == 10, "Check counter value has the expected initial value from a CREATE operation")
+                        // The injected CREATE op (value=10) is processed first in the override.
+                        // Then publishAndApply's local CREATE (value=1) is rejected as a duplicate
+                        // COUNTER_CREATE. So the counter retains the injected op's value.
+                        #expect(try counter.value == 10, "Check counter value has the expected initial value from the injected CREATE operation")
                         #expect(capturedCounterId != nil, "Check that Objects.publish was called with counter ID")
                     },
                 ),
@@ -2878,11 +3009,12 @@ private struct ObjectsIntegrationTests {
 
                         // Prevent publishing of ops to realtime so we can guarantee order of operations
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in
-                            // Do nothing - prevent publishing
+                        internallyTypedObjects.testsOnly_overridePublish(with: { objectMessages in
+                            // Prevent publishing to realtime but return serials so apply-on-ACK works
+                            return PublishResult(serials: objectMessages.map { _ in "fake-serial" })
                         })
 
-                        // Create counter locally, should have an initial value set
+                        // Create counter locally via apply-on-ACK
                         let counter = try await objects.createCounter(count: 1)
                         let internalCounter = try #require(counter as? PublicDefaultLiveCounter)
                         let counterId = internalCounter.proxied.testsOnly_objectID
@@ -3068,9 +3200,11 @@ private struct ObjectsIntegrationTests {
                         let objects = ctx.objects
 
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in })
+                        internallyTypedObjects.testsOnly_overridePublish(with: { objectMessages in
+                            PublishResult(serials: objectMessages.map { _ in "fake-serial" })
+                        })
 
-                        // prevent publishing of ops to realtime so we guarantee that the initial value doesn't come from a CREATE op
+                        // prevent publishing of ops to realtime so we guarantee that the initial value comes from local apply-on-ACK
                         let map = try await objects.createMap(entries: ["foo": "bar"])
                         #expect(try #require(map.get(key: "foo")?.stringValue) == "bar", "Check map has expected initial value")
                     },
@@ -3114,13 +3248,16 @@ private struct ObjectsIntegrationTests {
                             } catch {
                                 throw LiveObjectsError.other(error).toARTErrorInfo()
                             }
+                            return PublishResult(serials: objectMessages.map { _ in "fake-serial" })
                         })
 
                         let map = try await objects.createMap(entries: ["foo": "bar"])
 
-                        // Map should be created with forged initial value instead of the actual one
+                        // The injected CREATE op (with entry "baz") is processed first in the override.
+                        // Then publishAndApply's local CREATE (with entry "foo") is rejected as a duplicate
+                        // MAP_CREATE. So the map retains the injected op's entries.
                         #expect(try map.get(key: "foo") == nil, "Check key \"foo\" was not set on a map client-side")
-                        #expect(try #require(map.get(key: "baz")?.stringValue) == "qux", "Check key \"baz\" was set on a map from a CREATE operation after object creation")
+                        #expect(try #require(map.get(key: "baz")?.stringValue) == "qux", "Check key \"baz\" was set on a map from the injected CREATE operation")
                         #expect(capturedMapId != nil, "Check that Objects.publish was called with map ID")
                     },
                 ),
@@ -3133,13 +3270,13 @@ private struct ObjectsIntegrationTests {
                         let objectsHelper = ctx.objectsHelper
                         let channel = ctx.channel
 
-                        // Prevent publishing of ops to realtime so we can guarantee order of operations
+                        // Prevent publishing of ops to realtime but return serials so apply-on-ACK works
                         let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
-                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in
-                            // Do nothing - prevent publishing
+                        internallyTypedObjects.testsOnly_overridePublish(with: { objectMessages in
+                            PublishResult(serials: objectMessages.map { _ in "fake-serial" })
                         })
 
-                        // Create map locally, should have an initial value set
+                        // Create map locally via apply-on-ACK
                         let map = try await objects.createMap(entries: ["foo": "bar"])
                         let internalMap = try #require(map as? PublicDefaultLiveMap)
                         let mapId = internalMap.proxied.testsOnly_objectID
@@ -3751,7 +3888,7 @@ private struct ObjectsIntegrationTests {
             let testProxyTransport = try #require(client.internal.transport as? TestProxyTransport)
             let connectedProtocolMessage = ARTProtocolMessage()
             connectedProtocolMessage.action = .connected
-            connectedProtocolMessage.connectionDetails = .init(clientId: nil, connectionKey: nil, maxMessageSize: 10, maxFrameSize: 10, maxInboundRate: 10, connectionStateTtl: 10, serverId: "", maxIdleInterval: 10, objectsGCGracePeriod: 0.999) // all arbitrary except objectsGCGracePeriod
+            connectedProtocolMessage.connectionDetails = .init(clientId: nil, connectionKey: nil, maxMessageSize: 10, maxFrameSize: 10, maxInboundRate: 10, connectionStateTtl: 10, serverId: "", maxIdleInterval: 10, objectsGCGracePeriod: 0.999, siteCode: nil) // all arbitrary except objectsGCGracePeriod
             client.internal.queue.ably_syncNoDeadlock {
                 testProxyTransport.receive(connectedProtocolMessage)
             }
@@ -3779,7 +3916,7 @@ private struct ObjectsIntegrationTests {
             let testProxyTransport = try #require(client.internal.transport as? TestProxyTransport)
             let connectedProtocolMessage = ARTProtocolMessage()
             connectedProtocolMessage.action = .connected
-            connectedProtocolMessage.connectionDetails = .init(clientId: nil, connectionKey: nil, maxMessageSize: 10, maxFrameSize: 10, maxInboundRate: 10, connectionStateTtl: 10, serverId: "", maxIdleInterval: 10, objectsGCGracePeriod: nil) // all arbitrary except objectsGCGracePeriod
+            connectedProtocolMessage.connectionDetails = .init(clientId: nil, connectionKey: nil, maxMessageSize: 10, maxFrameSize: 10, maxInboundRate: 10, connectionStateTtl: 10, serverId: "", maxIdleInterval: 10, objectsGCGracePeriod: nil, siteCode: nil) // all arbitrary except objectsGCGracePeriod
             client.internal.queue.ably_syncNoDeadlock {
                 testProxyTransport.receive(connectedProtocolMessage)
             }
@@ -3991,6 +4128,531 @@ private struct ObjectsIntegrationTests {
                     waitForTombstonedObjectsToBeCollected: waitForTombstonedObjectsToBeCollected,
                 ),
             )
+        }
+    }
+
+    // MARK: - Apply on ACK tests
+
+    // MARK: Group 1: Operations applied locally on ACK (parameterized)
+
+    enum ApplyOnAckScenarios: Scenarios {
+        struct Context {
+            var objects: any RealtimeObjects
+            var root: any LiveMap
+            var objectsHelper: ObjectsHelper
+            var channelName: String
+            var channel: ARTRealtimeChannel
+            var client: ARTRealtime
+        }
+
+        static let scenarios: [TestScenario<Context>] = [
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "creating a LiveCounter applies immediately on ACK",
+                action: { ctx in
+                    let echoInterceptor = EchoInterceptor(client: ctx.client, channel: ctx.channel)
+                    defer { echoInterceptor.restore() }
+
+                    let counter = try await ctx.objects.createCounter(count: 42)
+                    try await ctx.root.set(key: "newCounter", value: .liveCounter(counter))
+
+                    // Value should be visible immediately via apply-on-ACK, not from echo
+                    #expect(try counter.value == 42, "Check counter value is applied immediately on ACK")
+
+                    // Verify echo was held (proving value didn't come from echo)
+                    #expect(!echoInterceptor.heldEchoes.isEmpty, "Check echo was intercepted")
+                },
+            ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "LiveCounter.increment applies operation immediately on ACK",
+                action: { ctx in
+                    let counter = try await ctx.objects.createCounter(count: 10)
+                    try await ctx.root.set(key: "counter", value: .liveCounter(counter))
+
+                    let echoInterceptor = EchoInterceptor(client: ctx.client, channel: ctx.channel)
+                    defer { echoInterceptor.restore() }
+
+                    try await counter.increment(amount: 5)
+
+                    #expect(try counter.value == 15, "Check counter value reflects increment applied on ACK")
+                    #expect(!echoInterceptor.heldEchoes.isEmpty, "Check echo was intercepted")
+                },
+            ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "creating a LiveMap applies immediately on ACK",
+                action: { ctx in
+                    let echoInterceptor = EchoInterceptor(client: ctx.client, channel: ctx.channel)
+                    defer { echoInterceptor.restore() }
+
+                    let map = try await ctx.objects.createMap(entries: ["foo": "bar"])
+                    try await ctx.root.set(key: "newMap", value: .liveMap(map))
+
+                    #expect(try #require(map.get(key: "foo")?.stringValue) == "bar", "Check map value is applied immediately on ACK")
+                    #expect(!echoInterceptor.heldEchoes.isEmpty, "Check echo was intercepted")
+                },
+            ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "LiveMap.set applies operation immediately on ACK",
+                action: { ctx in
+                    let echoInterceptor = EchoInterceptor(client: ctx.client, channel: ctx.channel)
+                    defer { echoInterceptor.restore() }
+
+                    try await ctx.root.set(key: "key", value: "value")
+
+                    #expect(try #require(ctx.root.get(key: "key")?.stringValue) == "value", "Check map set is applied immediately on ACK")
+                    #expect(!echoInterceptor.heldEchoes.isEmpty, "Check echo was intercepted")
+                },
+            ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "LiveMap.remove applies operation immediately on ACK",
+                action: { ctx in
+                    try await ctx.root.set(key: "keyToRemove", value: "value")
+
+                    let echoInterceptor = EchoInterceptor(client: ctx.client, channel: ctx.channel)
+                    defer { echoInterceptor.restore() }
+
+                    try await ctx.root.remove(key: "keyToRemove")
+
+                    #expect(try ctx.root.get(key: "keyToRemove") == nil, "Check map remove is applied immediately on ACK")
+                    #expect(!echoInterceptor.heldEchoes.isEmpty, "Check echo was intercepted")
+                },
+            ),
+        ]
+    }
+
+    @Test(arguments: ApplyOnAckScenarios.testCases)
+    func applyOnAckScenarios(testCase: TestCase<ApplyOnAckScenarios.Context>) async throws {
+        guard !testCase.disabled else {
+            withKnownIssue {
+                Issue.record("Test case is disabled")
+            }
+            return
+        }
+
+        let objectsHelper = try await ObjectsHelper()
+        let client = try await realtimeWithObjects(options: testCase.options)
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channel = client.channels.get(testCase.channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            try await testCase.scenario.action(
+                .init(
+                    objects: objects,
+                    root: root,
+                    objectsHelper: objectsHelper,
+                    channelName: testCase.channelName,
+                    channel: channel,
+                    client: client,
+                ),
+            )
+        }
+    }
+
+    // MARK: Group 2: Does not double-apply
+
+    @Test
+    func echoAfterAckDoesNotDoubleApply() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "echoAfterAckDoesNotDoubleApply"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create a counter with initial value 10
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            // Set up echo interceptor
+            let echoInterceptor = EchoInterceptor(client: client, channel: channel)
+            defer { echoInterceptor.restore() }
+
+            // Increment by 5 — applied via ACK, echo held
+            try await counter.increment(amount: 5)
+            #expect(try counter.value == 15, "Check counter value after increment applied on ACK")
+
+            // Release the held echo
+            await echoInterceptor.releaseAll()
+
+            // Value should still be 15 (not 20 from double-apply)
+            #expect(try counter.value == 15, "Check counter value is not double-applied after echo")
+        }
+    }
+
+    @Test
+    func ackAfterEchoDoesNotDoubleApply() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "ackAfterEchoDoesNotDoubleApply"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create a counter with initial value 10
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            // Set up ACK interceptor (holds ACKs, lets echoes through)
+            let ackInterceptor = AckInterceptor(client: client)
+            defer { ackInterceptor.restore() }
+
+            // Start increment without awaiting (it won't complete until ACK arrives)
+            let incrementTask = Task {
+                try await counter.increment(amount: 5)
+            }
+
+            // Wait for the ACK to be intercepted — this confirms the server
+            // received and processed the message. The echo should arrive around
+            // the same time.
+            await ackInterceptor.waitForAck()
+
+            // Give time for the echo to be processed
+            try await Task.sleep(nanoseconds: 500_000_000)
+
+            // Value should be 15 from the echo
+            #expect(try counter.value == 15, "Check counter value after echo received")
+
+            // Release the held ACK (dispatches onto internal queue)
+            await ackInterceptor.releaseAll()
+
+            // Wait for increment to complete
+            try await incrementTask.value
+
+            // Value should still be 15 (not 20 from double-apply)
+            #expect(try counter.value == 15, "Check counter value is not double-applied after ACK")
+        }
+    }
+
+    // MARK: Group 3: Does not incorrectly skip operations
+
+    @Test
+    func applyOnAckDoesNotUpdateSiteTimeserials() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "applyOnAckDoesNotUpdateSiteTimeserials"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+            let objectsHelper = try await ObjectsHelper()
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Step 1: Set up echo interceptor
+            let echoInterceptor = EchoInterceptor(client: client, channel: channel)
+            defer { echoInterceptor.restore() }
+
+            // Step 2: Create a counter with initial value 10 — echo held
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            // Step 3: Wait for both echoes, extract COUNTER_CREATE serial and siteCode.
+            // createCounter + root.set generate two echoes (COUNTER_CREATE and MAP_SET);
+            // search all held echoes to find the COUNTER_CREATE.
+            await echoInterceptor.waitForEchoCount(2)
+            let heldEchoes = echoInterceptor.heldEchoes
+            let allStateItems = heldEchoes.flatMap { $0.testsOnly_inboundObjectMessages }
+            let counterCreate = try #require(allStateItems.first { $0.operation?.action == .known(.counterCreate) })
+            let counterCreateSerial = try #require(counterCreate.serial)
+            let counterCreateSiteCode = try #require(counterCreate.siteCode)
+
+            // Step 4: Release the create echo (so siteTimeserials gets set)
+            await echoInterceptor.releaseAll()
+
+            // Step 5: Increment by 5 — applies via ACK, echo held
+            try await counter.increment(amount: 5)
+            #expect(try counter.value == 15, "Check counter value after increment applied on ACK")
+
+            // Step 6: Wait for the increment echo, extract its serial
+            await echoInterceptor.waitForEcho()
+            let incrementEchoes = echoInterceptor.heldEchoes
+            let incrementEcho = incrementEchoes.last!
+            let incrementStateItems = incrementEcho.testsOnly_inboundObjectMessages
+            let incrementOp = try #require(incrementStateItems.first { $0.operation?.action == .known(.counterInc) })
+            _ = try #require(incrementOp.serial) // verify serial exists
+
+            // Step 7: Construct injectedSerial = counterCreateSerial + "a"
+            // This serial is between create and increment, so if siteTimeserials were
+            // updated by apply-on-ACK, this operation would be rejected
+            let injectedSerial = counterCreateSerial + "a"
+
+            // Step 8: Inject a COUNTER_INC operation with injectedSerial
+            let internalCounter = try #require(counter as? PublicDefaultLiveCounter)
+            let counterId = internalCounter.proxied.testsOnly_objectID
+            await objectsHelper.processObjectOperationMessageOnChannel(
+                channel: channel,
+                serial: injectedSerial,
+                siteCode: counterCreateSiteCode,
+                state: [objectsHelper.counterIncOp(objectId: counterId, amount: 100)],
+            )
+
+            // Step 9: Assert counter.value == 115
+            // If siteTimeserials had been updated by apply-on-ACK, the injected operation
+            // would have been rejected, and counter would be 15
+            #expect(try counter.value == 115, "Check injected operation was applied (proving siteTimeserials not updated by apply-on-ACK)")
+        }
+    }
+
+    // MARK: Group 4: ACKs buffered during OBJECT_SYNC
+
+    @Test
+    func operationBufferedDuringSyncIsAppliedAfterSyncCompletes() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "operationBufferedDuringSyncApplied"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+            let objectsHelper = try await ObjectsHelper()
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create counter with value 10
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+            #expect(try counter.value == 10, "Check counter initial value")
+
+            let internalCounter = try #require(counter as? PublicDefaultLiveCounter)
+            let counterId = internalCounter.proxied.testsOnly_objectID
+
+            // Inject ATTACHED with HAS_OBJECTS to trigger SYNCING state
+            await injectAttachedMessage(channel: channel, hasObjects: true)
+
+            // Increment while syncing — don't await because publishAndApply will
+            // wait for sync to complete, and we need to complete the sync below.
+            let incrementTask = Task {
+                try await counter.increment(amount: 5)
+            }
+
+            // Give time for the ACK to be received and publishAndApply to enter
+            // the sync-wait before we complete the sync.
+            try await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+
+            // Complete the sync sequence with an OBJECT_SYNC message containing counter=10
+            await objectsHelper.processObjectStateMessageOnChannel(
+                channel: channel,
+                syncSerial: "serial:",
+                state: [
+                    objectsHelper.counterObject(
+                        objectId: counterId,
+                        siteTimeserials: [:],
+                        materialisedCount: 10,
+                    ),
+                ],
+            )
+
+            // Wait for the increment task to complete
+            try await incrementTask.value
+
+            // After sync completes, the buffered ACK should be applied
+            #expect(try counter.value == 15, "Check counter value after sync completes with buffered ACK applied")
+        }
+    }
+
+    @Test
+    func appliedOnAckSerialsIsClearedOnSync() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "appliedOnAckSerialsCleared"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+            let objectsHelper = try await ObjectsHelper()
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create counter and increment via apply-on-ACK (echo held)
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            let echoInterceptor = EchoInterceptor(client: client, channel: channel)
+
+            try await counter.increment(amount: 5)
+            #expect(try counter.value == 15, "Check counter value after increment on ACK")
+
+            let internalCounter = try #require(counter as? PublicDefaultLiveCounter)
+            let counterId = internalCounter.proxied.testsOnly_objectID
+
+            // Inject ATTACHED+HAS_OBJECTS to trigger sync
+            await injectAttachedMessage(channel: channel, hasObjects: true)
+
+            // Complete OBJECT_SYNC with a fake siteCode (counter=10)
+            await objectsHelper.processObjectStateMessageOnChannel(
+                channel: channel,
+                syncSerial: "serial:",
+                state: [
+                    objectsHelper.counterObject(
+                        objectId: counterId,
+                        siteTimeserials: ["fakeSite": lexicoTimeserial(seriesId: "fakeSite", timestamp: 0, counter: 0)],
+                        materialisedCount: 10,
+                    ),
+                ],
+            )
+
+            // After sync, value should be 10 (from sync state, appliedOnAckSerials cleared)
+            #expect(try counter.value == 10, "Check counter value is reset to sync state")
+
+            // Release the held echo — should be applied because appliedOnAckSerials was cleared
+            await echoInterceptor.releaseAll()
+            echoInterceptor.restore()
+
+            #expect(try counter.value == 15, "Check counter value after releasing echo (proving appliedOnAckSerials was cleared on sync)")
+        }
+    }
+
+    @Test(arguments: [
+        ARTRealtimeChannelState.detached,
+        ARTRealtimeChannelState.suspended,
+        ARTRealtimeChannelState.failed,
+    ])
+    func publishAndApplyRejectsOnChannelStateChangeDuringSync(targetState: ARTRealtimeChannelState) async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "publishAndApplyRejects_\(targetState.rawValue)"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create a counter
+            let counter = try await objects.createCounter(count: 10)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            // Inject ATTACHED+HAS_OBJECTS to trigger SYNCING state
+            await injectAttachedMessage(channel: channel, hasObjects: true)
+
+            // Set up ACK interceptor and start increment
+            let ackInterceptor = AckInterceptor(client: client)
+
+            let incrementTask = Task {
+                try await counter.increment(amount: 5)
+            }
+
+            // Wait for the ACK to arrive
+            await ackInterceptor.waitForAck()
+
+            // Release ACK so publishAndApply proceeds to sync-wait
+            await ackInterceptor.releaseAll()
+            ackInterceptor.restore()
+
+            // Yield to allow processing
+            await Task.yield()
+            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+
+            // Trigger channel state change
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                channel.internal.queue.async {
+                    switch targetState {
+                    case .suspended:
+                        let params = ChannelStateChangeParams(state: .ok)
+                        channel.internal.setSuspended(params)
+                    case .failed:
+                        let params = ChannelStateChangeParams(state: .ok)
+                        channel.internal.setFailed(params)
+                    case .detached:
+                        // Use detachChannel: directly instead of setDetached: because
+                        // setDetached: initiates a reattach when the channel is attached.
+                        let params = ChannelStateChangeParams(state: .ok)
+                        channel.internal.detachChannel(params)
+                    default:
+                        break
+                    }
+                    continuation.resume()
+                }
+            }
+
+            // The increment should throw with error 92008
+            do {
+                try await incrementTask.value
+                Issue.record("Expected increment to throw during channel state change")
+            } catch let error as ARTErrorInfo {
+                #expect(error.code == 92008, "Check error code is 92008 for publishAndApply rejected during sync")
+            }
+        }
+    }
+
+    // MARK: Group 5: Subscription events
+
+    @Test
+    func subscriptionCallbacksFireForBothLocallyAppliedAndRealtimeReceivedOperations() async throws {
+        let client = try await realtimeWithObjects(options: .init(logIdentifier: "client1"))
+
+        try await monitorConnectionThenCloseAndFinishAsync(client) {
+            let channelName = "subscriptionCallbacksApplyOnAck"
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
+            let objects = channel.objects
+            let objectsHelper = try await ObjectsHelper()
+
+            try await channel.attachAsync()
+            let root = try await objects.getRoot()
+
+            // Create counter
+            let counter = try await objects.createCounter(count: 0)
+            try await root.set(key: "counter", value: .liveCounter(counter))
+
+            // Subscribe to counter updates
+            let counterUpdates = try counter.updates()
+
+            // Set up echo interceptor
+            let echoInterceptor = EchoInterceptor(client: client, channel: channel)
+
+            // Perform increment via SDK — applied locally on ACK with echoes held
+            try await counter.increment(amount: 5)
+            #expect(try counter.value == 5, "Check counter value after local increment")
+
+            // The subscription should have fired immediately from the ACK path
+            // Collect the event
+            var receivedEvents: [LiveCounterUpdate] = []
+            if let event = await counterUpdates.first(where: { _ in true }) {
+                receivedEvents.append(event)
+            }
+
+            #expect(receivedEvents.count == 1, "Check 1 subscription event received after local increment")
+
+            // Restore echo handling
+            echoInterceptor.restore()
+
+            // Release held echoes (shouldn't cause another event since already applied)
+            await echoInterceptor.releaseAll()
+
+            // Trigger another increment via REST — this is received over Realtime
+            let internalCounter = try #require(counter as? PublicDefaultLiveCounter)
+            let counterId = internalCounter.proxied.testsOnly_objectID
+            _ = try await objectsHelper.operationRequest(
+                channelName: channelName,
+                opBody: objectsHelper.counterIncRestOp(objectId: counterId, number: 10),
+            )
+
+            // Wait for counter update from Realtime
+            if let event = await counterUpdates.first(where: { _ in true }) {
+                receivedEvents.append(event)
+            }
+
+            #expect(receivedEvents.count == 2, "Check 2 subscription events received total")
+            #expect(try counter.value == 15, "Check final counter value after both operations")
         }
     }
 }

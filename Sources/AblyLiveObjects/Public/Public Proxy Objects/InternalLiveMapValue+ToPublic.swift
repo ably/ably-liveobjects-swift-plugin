@@ -6,14 +6,15 @@ internal extension InternalLiveMapValue {
     struct PublicValueCreationArgs {
         internal var coreSDK: CoreSDK
         internal var mapDelegate: LiveMapObjectsPoolDelegate
+        internal var realtimeObjects: InternalDefaultRealtimeObjects
         internal var logger: Logger
 
         internal var toCounterCreationArgs: PublicObjectsStore.CounterCreationArgs {
-            .init(coreSDK: coreSDK, logger: logger)
+            .init(coreSDK: coreSDK, realtimeObjects: realtimeObjects, logger: logger)
         }
 
         internal var toMapCreationArgs: PublicObjectsStore.MapCreationArgs {
-            .init(coreSDK: coreSDK, delegate: mapDelegate, logger: logger)
+            .init(coreSDK: coreSDK, delegate: mapDelegate, realtimeObjects: realtimeObjects, logger: logger)
         }
     }
 

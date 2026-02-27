@@ -5,8 +5,8 @@ import Ably
 ///
 /// This provides us with a mockable interface to ably-cocoa, and it also allows internal components and their tests not to need to worry about some of the boring details of how we bridge Swift types to `_AblyPluginSupportPrivate`'s Objective-C API (i.e. boxing).
 internal protocol CoreSDK: AnyObject, Sendable {
-    /// Implements the internal `#publish` method of RTO15.
-    func publish(objectMessages: [OutboundObjectMessage]) async throws(ARTErrorInfo)
+    /// Implements the internal `#publish` method of RTO15. Returns the `PublishResult` from the ACK (RTO15h).
+    func publish(objectMessages: [OutboundObjectMessage]) async throws(ARTErrorInfo) -> PublishResult
 
     /// Implements the server time fetch of RTO16, including the storing and usage of the local clock offset.
     func fetchServerTime() async throws(ARTErrorInfo) -> Date
@@ -14,10 +14,13 @@ internal protocol CoreSDK: AnyObject, Sendable {
     /// Replaces the implementation of ``publish(objectMessages:)``.
     ///
     /// Used by integration tests, for example to disable `ObjectMessage` publishing so that a test can verify that a behaviour is not a side effect of an `ObjectMessage` sent by the SDK.
-    func testsOnly_overridePublish(with newImplementation: @escaping ([OutboundObjectMessage]) async throws(ARTErrorInfo) -> Void)
+    func testsOnly_overridePublish(with newImplementation: @escaping ([OutboundObjectMessage]) async throws(ARTErrorInfo) -> PublishResult)
 
     /// Returns the current state of the Realtime channel that this wraps.
     var nosync_channelState: _AblyPluginSupportPrivate.RealtimeChannelState { get }
+
+    /// Returns the `siteCode` from the latest `connectionDetails`, or nil if unavailable.
+    func nosync_siteCode() -> String?
 }
 
 internal final class DefaultCoreSDK: CoreSDK {
@@ -29,12 +32,12 @@ internal final class DefaultCoreSDK: CoreSDK {
     private let pluginAPI: PluginAPIProtocol
     private let logger: Logger
 
-    /// If set to true, ``publish(objectMessages:)`` will behave like a no-op.
+    /// If set, ``publish(objectMessages:)`` delegates to this implementation.
     ///
     /// This enables the `testsOnly_overridePublish(with:)` test hook.
     ///
     /// - Note: This should be `throws(ARTErrorInfo)` but that causes a compilation error of "Runtime support for typed throws function types is only available in macOS 15.0.0 or newer".
-    private nonisolated(unsafe) var overriddenPublishImplementation: (([OutboundObjectMessage]) async throws -> Void)?
+    private nonisolated(unsafe) var overriddenPublishImplementation: (([OutboundObjectMessage]) async throws -> PublishResult)?
 
     internal init(
         channel: _AblyPluginSupportPrivate.RealtimeChannel,
@@ -50,7 +53,7 @@ internal final class DefaultCoreSDK: CoreSDK {
 
     // MARK: - CoreSDK conformance
 
-    internal func publish(objectMessages: [OutboundObjectMessage]) async throws(ARTErrorInfo) {
+    internal func publish(objectMessages: [OutboundObjectMessage]) async throws(ARTErrorInfo) -> PublishResult {
         logger.log("publish(objectMessages: \(LoggingUtilities.formatObjectMessagesForLogging(objectMessages)))", level: .debug)
 
         // Use the overridden implementation if supplied
@@ -59,18 +62,17 @@ internal final class DefaultCoreSDK: CoreSDK {
         }
         if let overriddenImplementation {
             do {
-                try await overriddenImplementation(objectMessages)
+                return try await overriddenImplementation(objectMessages)
             } catch {
                 guard let artErrorInfo = error as? ARTErrorInfo else {
                     preconditionFailure("Expected ARTErrorInfo, got \(error)")
                 }
                 throw artErrorInfo
             }
-            return
         }
 
         // TODO: Implement message size checking (https://github.com/ably/ably-liveobjects-swift-plugin/issues/13)
-        try await DefaultInternalPlugin.sendObject(
+        return try await DefaultInternalPlugin.sendObjectWithResult(
             objectMessages: objectMessages,
             channel: channel,
             client: client,
@@ -78,7 +80,7 @@ internal final class DefaultCoreSDK: CoreSDK {
         )
     }
 
-    internal func testsOnly_overridePublish(with newImplementation: @escaping ([OutboundObjectMessage]) async throws(ARTErrorInfo) -> Void) {
+    internal func testsOnly_overridePublish(with newImplementation: @escaping ([OutboundObjectMessage]) async throws(ARTErrorInfo) -> PublishResult) {
         mutex.withLock {
             overriddenPublishImplementation = newImplementation
         }
@@ -108,6 +110,10 @@ internal final class DefaultCoreSDK: CoreSDK {
 
     internal var nosync_channelState: _AblyPluginSupportPrivate.RealtimeChannelState {
         pluginAPI.nosync_state(for: channel)
+    }
+
+    internal func nosync_siteCode() -> String? {
+        DefaultInternalPlugin.siteCode(client: client, pluginAPI: pluginAPI)
     }
 }
 

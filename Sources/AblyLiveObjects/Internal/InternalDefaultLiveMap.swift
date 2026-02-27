@@ -159,7 +159,7 @@ internal final class InternalDefaultLiveMap: Sendable {
         try entries(coreSDK: coreSDK, delegate: delegate).map(\.value)
     }
 
-    internal func set(key: String, value: InternalLiveMapValue, coreSDK: CoreSDK) async throws(ARTErrorInfo) {
+    internal func set(key: String, value: InternalLiveMapValue, coreSDK: CoreSDK, realtimeObjects: InternalDefaultRealtimeObjects) async throws(ARTErrorInfo) {
         let objectMessage = try mutableStateMutex.withSync { mutableState throws(ARTErrorInfo) in
             // RTLM20c
             try coreSDK.nosync_validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "LiveMap.set")
@@ -180,10 +180,11 @@ internal final class InternalDefaultLiveMap: Sendable {
             )
         }
 
-        try await coreSDK.publish(objectMessages: [objectMessage])
+        // RTLM20g
+        try await realtimeObjects.publishAndApply(objectMessages: [objectMessage], coreSDK: coreSDK)
     }
 
-    internal func remove(key: String, coreSDK: CoreSDK) async throws(ARTErrorInfo) {
+    internal func remove(key: String, coreSDK: CoreSDK, realtimeObjects: InternalDefaultRealtimeObjects) async throws(ARTErrorInfo) {
         let objectMessage = try mutableStateMutex.withSync { mutableState throws(ARTErrorInfo) in
             // RTLM21c
             try coreSDK.nosync_validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "LiveMap.remove")
@@ -203,7 +204,7 @@ internal final class InternalDefaultLiveMap: Sendable {
         }
 
         // RTLM21f
-        try await coreSDK.publish(objectMessages: [objectMessage])
+        try await realtimeObjects.publishAndApply(objectMessages: [objectMessage], coreSDK: coreSDK)
     }
 
     @discardableResult
@@ -315,13 +316,17 @@ internal final class InternalDefaultLiveMap: Sendable {
     }
 
     /// Attempts to apply an operation from an inbound `ObjectMessage`, per RTLM15.
+    ///
+    /// - Returns: `true` if the operation was applied, `false` if it was skipped (RTLM15g).
+    @discardableResult
     internal func nosync_apply(
         _ operation: ObjectOperation,
         objectMessageSerial: String?,
         objectMessageSiteCode: String?,
         objectMessageSerialTimestamp: Date?,
         objectsPool: inout ObjectsPool,
-    ) {
+        source: ObjectsOperationSource,
+    ) -> Bool {
         mutableStateMutex.withoutSync { mutableState in
             mutableState.apply(
                 operation,
@@ -333,6 +338,7 @@ internal final class InternalDefaultLiveMap: Sendable {
                 internalQueue: mutableStateMutex.dispatchQueue,
                 userCallbackQueue: userCallbackQueue,
                 clock: clock,
+                source: source,
             )
         }
     }
@@ -574,6 +580,8 @@ internal final class InternalDefaultLiveMap: Sendable {
         }
 
         /// Attempts to apply an operation from an inbound `ObjectMessage`, per RTLM15.
+        ///
+        /// - Returns: `true` if the operation was applied, `false` if skipped (RTLM15g).
         internal mutating func apply(
             _ operation: ObjectOperation,
             objectMessageSerial: String?,
@@ -584,20 +592,22 @@ internal final class InternalDefaultLiveMap: Sendable {
             internalQueue: DispatchQueue,
             userCallbackQueue: DispatchQueue,
             clock: SimpleClock,
-        ) {
+            source: ObjectsOperationSource,
+        ) -> Bool {
             guard let applicableOperation = liveObjectMutableState.canApplyOperation(objectMessageSerial: objectMessageSerial, objectMessageSiteCode: objectMessageSiteCode, logger: logger) else {
                 // RTLM15b
                 logger.log("Operation \(operation) (serial: \(String(describing: objectMessageSerial)), siteCode: \(String(describing: objectMessageSiteCode))) should not be applied; discarding", level: .debug)
-                return
+                return false
             }
 
-            // RTLM15c
-            liveObjectMutableState.siteTimeserials[applicableOperation.objectMessageSiteCode] = applicableOperation.objectMessageSerial
+            // RTLM15c: Only update siteTimeserials for channel-sourced operations
+            if source == .channel {
+                liveObjectMutableState.siteTimeserials[applicableOperation.objectMessageSiteCode] = applicableOperation.objectMessageSerial
+            }
 
             // RTLM15e
-            // TODO: are we still meant to update siteTimeserials? https://github.com/ably/specification/pull/350/files#r2218718854
             if liveObjectMutableState.isTombstone {
-                return
+                return false
             }
 
             switch operation.action {
@@ -613,14 +623,16 @@ internal final class InternalDefaultLiveMap: Sendable {
                 )
                 // RTLM15d1a
                 liveObjectMutableState.emit(update, on: userCallbackQueue)
+                // RTLM15d1b
+                return true
             case .known(.mapSet):
                 guard let mapOp = operation.mapOp else {
                     logger.log("Could not apply MAP_SET since operation.mapOp is missing", level: .warn)
-                    return
+                    return false
                 }
                 guard let data = mapOp.data else {
                     logger.log("Could not apply MAP_SET since operation.data is missing", level: .warn)
-                    return
+                    return false
                 }
 
                 // RTLM15d2
@@ -636,9 +648,11 @@ internal final class InternalDefaultLiveMap: Sendable {
                 )
                 // RTLM15d2a
                 liveObjectMutableState.emit(update, on: userCallbackQueue)
+                // RTLM15d2b
+                return true
             case .known(.mapRemove):
                 guard let mapOp = operation.mapOp else {
-                    return
+                    return false
                 }
 
                 // RTLM15d3
@@ -651,6 +665,8 @@ internal final class InternalDefaultLiveMap: Sendable {
                 )
                 // RTLM15d3a
                 liveObjectMutableState.emit(update, on: userCallbackQueue)
+                // RTLM15d3b
+                return true
             case .known(.objectDelete):
                 let dataBeforeApplyingOperation = data
 
@@ -664,9 +680,12 @@ internal final class InternalDefaultLiveMap: Sendable {
 
                 // RTLM15d5a
                 liveObjectMutableState.emit(.update(.init(update: dataBeforeApplyingOperation.mapValues { _ in .removed })), on: userCallbackQueue)
+                // RTLM15d5b
+                return true
             default:
                 // RTLM15d4
                 logger.log("Operation \(operation) has unsupported action for LiveMap; discarding", level: .warn)
+                return false
             }
         }
 

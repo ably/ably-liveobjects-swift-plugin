@@ -103,7 +103,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
         }
     }
 
-    internal func increment(amount: Double, coreSDK: CoreSDK) async throws(ARTErrorInfo) {
+    internal func increment(amount: Double, coreSDK: CoreSDK, realtimeObjects: InternalDefaultRealtimeObjects) async throws(ARTErrorInfo) {
         let objectMessage = try mutableStateMutex.withSync { mutableState throws(ARTErrorInfo) in
             // RTLC12c
             try coreSDK.nosync_validateChannelState(
@@ -130,13 +130,13 @@ internal final class InternalDefaultLiveCounter: Sendable {
             )
         }
 
-        // RTLC12f
-        try await coreSDK.publish(objectMessages: [objectMessage])
+        // RTLC12g
+        try await realtimeObjects.publishAndApply(objectMessages: [objectMessage], coreSDK: coreSDK)
     }
 
-    internal func decrement(amount: Double, coreSDK: CoreSDK) async throws(ARTErrorInfo) {
+    internal func decrement(amount: Double, coreSDK: CoreSDK, realtimeObjects: InternalDefaultRealtimeObjects) async throws(ARTErrorInfo) {
         // RTLC13b
-        try await increment(amount: -amount, coreSDK: coreSDK)
+        try await increment(amount: -amount, coreSDK: coreSDK, realtimeObjects: realtimeObjects)
     }
 
     @discardableResult
@@ -237,13 +237,17 @@ internal final class InternalDefaultLiveCounter: Sendable {
     }
 
     /// Attempts to apply an operation from an inbound `ObjectMessage`, per RTLC7.
+    ///
+    /// - Returns: `true` if the operation was applied, `false` if it was skipped (RTLC7g).
+    @discardableResult
     internal func nosync_apply(
         _ operation: ObjectOperation,
         objectMessageSerial: String?,
         objectMessageSiteCode: String?,
         objectMessageSerialTimestamp: Date?,
         objectsPool: inout ObjectsPool,
-    ) {
+        source: ObjectsOperationSource,
+    ) -> Bool {
         mutableStateMutex.withoutSync { mutableState in
             mutableState.apply(
                 operation,
@@ -254,6 +258,7 @@ internal final class InternalDefaultLiveCounter: Sendable {
                 logger: logger,
                 clock: clock,
                 userCallbackQueue: userCallbackQueue,
+                source: source,
             )
         }
     }
@@ -371,6 +376,8 @@ internal final class InternalDefaultLiveCounter: Sendable {
         }
 
         /// Attempts to apply an operation from an inbound `ObjectMessage`, per RTLC7.
+        ///
+        /// - Returns: `true` if the operation was applied, `false` if skipped (RTLC7g).
         internal mutating func apply(
             _ operation: ObjectOperation,
             objectMessageSerial: String?,
@@ -380,20 +387,22 @@ internal final class InternalDefaultLiveCounter: Sendable {
             logger: Logger,
             clock: SimpleClock,
             userCallbackQueue: DispatchQueue,
-        ) {
+            source: ObjectsOperationSource,
+        ) -> Bool {
             guard let applicableOperation = liveObjectMutableState.canApplyOperation(objectMessageSerial: objectMessageSerial, objectMessageSiteCode: objectMessageSiteCode, logger: logger) else {
                 // RTLC7b
                 logger.log("Operation \(operation) (serial: \(String(describing: objectMessageSerial)), siteCode: \(String(describing: objectMessageSiteCode))) should not be applied; discarding", level: .debug)
-                return
+                return false
             }
 
-            // RTLC7c
-            liveObjectMutableState.siteTimeserials[applicableOperation.objectMessageSiteCode] = applicableOperation.objectMessageSerial
+            // RTLC7c: Only update siteTimeserials for channel-sourced operations
+            if source == .channel {
+                liveObjectMutableState.siteTimeserials[applicableOperation.objectMessageSiteCode] = applicableOperation.objectMessageSerial
+            }
 
             // RTLC7e
-            // TODO: are we still meant to update siteTimeserials? https://github.com/ably/specification/pull/350/files#r2218718854
             if liveObjectMutableState.isTombstone {
-                return
+                return false
             }
 
             switch operation.action {
@@ -405,11 +414,15 @@ internal final class InternalDefaultLiveCounter: Sendable {
                 )
                 // RTLC7d1a
                 liveObjectMutableState.emit(update, on: userCallbackQueue)
+                // RTLC7d1b
+                return true
             case .known(.counterInc):
                 // RTLC7d2
                 let update = applyCounterIncOperation(operation.counterOp)
                 // RTLC7d2a
                 liveObjectMutableState.emit(update, on: userCallbackQueue)
+                // RTLC7d2b
+                return true
             case .known(.objectDelete):
                 let dataBeforeApplyingOperation = data
 
@@ -423,9 +436,12 @@ internal final class InternalDefaultLiveCounter: Sendable {
 
                 // RTLC7d4a
                 liveObjectMutableState.emit(.update(.init(amount: -dataBeforeApplyingOperation)), on: userCallbackQueue)
+                // RTLC7d4b
+                return true
             default:
                 // RTLC7d3
                 logger.log("Operation \(operation) has unsupported action for LiveCounter; discarding", level: .warn)
+                return false
             }
         }
 

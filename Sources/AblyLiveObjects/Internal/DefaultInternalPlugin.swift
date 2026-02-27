@@ -70,7 +70,7 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
     /// A class that wraps an object message.
     ///
     /// We need this intermediate type because we want object messages to be structs — because they're nicer to work with internally — but a struct can't conform to the class-bound `_AblyPluginSupportPrivate.ObjectMessageProtocol`.
-    private final class ObjectMessageBox<T>: _AblyPluginSupportPrivate.ObjectMessageProtocol where T: Sendable {
+    internal final class ObjectMessageBox<T>: _AblyPluginSupportPrivate.ObjectMessageProtocol where T: Sendable {
         internal let objectMessage: T
 
         init(objectMessage: T) {
@@ -143,6 +143,11 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
         )
     }
 
+    internal func nosync_onChannelStateChanged(_ channel: _AblyPluginSupportPrivate.RealtimeChannel, toState state: _AblyPluginSupportPrivate.RealtimeChannelState, reason: (any _AblyPluginSupportPrivate.PublicErrorInfo)?) {
+        let errorReason = reason.map { ARTErrorInfo.castPluginPublicErrorInfo($0) }
+        nosync_realtimeObjects(for: channel).nosync_onChannelStateChanged(toState: state, reason: errorReason)
+    }
+
     internal func nosync_onConnected(withConnectionDetails connectionDetails: (any ConnectionDetailsProtocol)?, channel: any RealtimeChannel) {
         let gracePeriod = connectionDetails?.objectsGCGracePeriod?.doubleValue ?? InternalDefaultRealtimeObjects.GarbageCollectionOptions.defaultGracePeriod
 
@@ -179,5 +184,79 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
                 }
             }
         }.get()
+    }
+
+    /// Sends object messages and returns the `PublishResult` from the ACK (RTO15h).
+    ///
+    /// This calls the new optional `nosync_sendObjectWithObjectMessages:channel:completionWithResult:` method
+    /// on `PluginAPIProtocol`. If the method is not implemented (ably-cocoa too old), this will `fatalError`.
+    internal static func sendObjectWithResult(
+        objectMessages: [OutboundObjectMessage],
+        channel: _AblyPluginSupportPrivate.RealtimeChannel,
+        client: _AblyPluginSupportPrivate.RealtimeClient,
+        pluginAPI: PluginAPIProtocol,
+    ) async throws(ARTErrorInfo) -> PublishResult {
+        let objectMessageBoxes: [ObjectMessageBox<OutboundObjectMessage>] = objectMessages.map { .init(objectMessage: $0) }
+
+        // Check that the new optional method is available
+        let selector = NSSelectorFromString("nosync_sendObjectWithObjectMessages:channel:completionWithResult:")
+        guard (pluginAPI as AnyObject).responds(to: selector) else {
+            fatalError("ably-cocoa does not implement nosync_sendObjectWithObjectMessages:channel:completionWithResult:. Please update ably-cocoa to a version that supports apply-on-ACK.")
+        }
+
+        return try await withCheckedContinuation { (continuation: CheckedContinuation<Result<PublishResult, ARTErrorInfo>, _>) in
+            let internalQueue = pluginAPI.internalQueue(for: client)
+
+            internalQueue.async {
+                pluginAPI.nosync_sendObject?(
+                    withObjectMessages: objectMessageBoxes,
+                    channel: channel,
+                    completionWithResult: { error, publishResultProtocol in
+                        dispatchPrecondition(condition: .onQueue(internalQueue))
+
+                        if let error {
+                            continuation.resume(returning: .failure(ARTErrorInfo.castPluginPublicErrorInfo(error)))
+                        } else {
+                            let serials: [String?]
+                            if let publishResultProtocol {
+                                // Cast to concrete ARTPublishResult to work around a Swift
+                                // NSArray bridging crash. ARTPublishResultSerial's conformance
+                                // to PublishResultSerialProtocol is declared behind
+                                // #ifdef ABLY_SUPPORTS_PLUGINS in a private header, which is
+                                // not visible to Swift consumers, causing the typed array
+                                // bridge to crash at runtime.
+                                // swiftlint:disable:next force_cast
+                                let publishResult = publishResultProtocol as! ARTPublishResult
+                                serials = publishResult.serials.map(\.value)
+                            } else {
+                                serials = []
+                            }
+                            continuation.resume(returning: .success(PublishResult(serials: serials)))
+                        }
+                    }
+                )
+            }
+        }.get()
+    }
+
+    // MARK: - Connection Details
+
+    /// Returns the `siteCode` from the latest `connectionDetails`, or nil if unavailable.
+    internal static func siteCode(
+        client: _AblyPluginSupportPrivate.RealtimeClient,
+        pluginAPI: PluginAPIProtocol,
+    ) -> String? {
+        guard let connectionDetails = pluginAPI.nosync_latestConnectionDetails(for: client) else {
+            return nil
+        }
+
+        // siteCode is @optional on the protocol; use responds(to:) to distinguish
+        // "not implemented" from "returns nil"
+        let selector = NSSelectorFromString("siteCode")
+        guard (connectionDetails as AnyObject).responds(to: selector) else {
+            fatalError("ably-cocoa's connectionDetails does not implement siteCode. Please update ably-cocoa to a version that supports apply-on-ACK.")
+        }
+
+        return connectionDetails.siteCode?()
     }
 }

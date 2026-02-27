@@ -11,12 +11,14 @@ internal final class PublicDefaultLiveMap: LiveMap {
 
     private let coreSDK: CoreSDK
     private let delegate: LiveMapObjectsPoolDelegate
+    private let realtimeObjects: InternalDefaultRealtimeObjects
     private let logger: Logger
 
-    internal init(proxied: InternalDefaultLiveMap, coreSDK: CoreSDK, delegate: LiveMapObjectsPoolDelegate, logger: Logger) {
+    internal init(proxied: InternalDefaultLiveMap, coreSDK: CoreSDK, delegate: LiveMapObjectsPoolDelegate, realtimeObjects: InternalDefaultRealtimeObjects, logger: Logger) {
         self.proxied = proxied
         self.coreSDK = coreSDK
         self.delegate = delegate
+        self.realtimeObjects = realtimeObjects
         self.logger = logger
     }
 
@@ -27,6 +29,7 @@ internal final class PublicDefaultLiveMap: LiveMap {
             creationArgs: .init(
                 coreSDK: coreSDK,
                 mapDelegate: delegate,
+                realtimeObjects: realtimeObjects,
                 logger: logger,
             ),
         )
@@ -47,6 +50,7 @@ internal final class PublicDefaultLiveMap: LiveMap {
                         creationArgs: .init(
                             coreSDK: coreSDK,
                             mapDelegate: delegate,
+                            realtimeObjects: realtimeObjects,
                             logger: logger,
                         ),
                     )
@@ -68,6 +72,7 @@ internal final class PublicDefaultLiveMap: LiveMap {
                     creationArgs: .init(
                         coreSDK: coreSDK,
                         mapDelegate: delegate,
+                        realtimeObjects: realtimeObjects,
                         logger: logger,
                     ),
                 )
@@ -78,11 +83,11 @@ internal final class PublicDefaultLiveMap: LiveMap {
     internal func set(key: String, value: LiveMapValue) async throws(ARTErrorInfo) {
         let internalValue = InternalLiveMapValue(liveMapValue: value)
 
-        try await proxied.set(key: key, value: internalValue, coreSDK: coreSDK)
+        try await proxied.set(key: key, value: internalValue, coreSDK: coreSDK, realtimeObjects: realtimeObjects)
     }
 
     internal func remove(key: String) async throws(ARTErrorInfo) {
-        try await proxied.remove(key: key, coreSDK: coreSDK)
+        try await proxied.remove(key: key, coreSDK: coreSDK, realtimeObjects: realtimeObjects)
     }
 
     internal func subscribe(listener: @escaping LiveObjectUpdateCallback<LiveMapUpdate>) throws(ARTErrorInfo) -> any SubscribeResponse {

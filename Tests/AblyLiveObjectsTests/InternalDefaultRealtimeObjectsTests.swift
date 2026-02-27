@@ -1212,10 +1212,16 @@ struct InternalDefaultRealtimeObjectsTests {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, serverTime: .init(timeIntervalSince1970: 1_754_042_434), internalQueue: internalQueue)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             // Track published messages
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
+                return PublishResult(serials: messages.map { _ in "serial_\(UUID().uuidString)" })
             }
 
             // Call createMap
@@ -1253,10 +1259,16 @@ struct InternalDefaultRealtimeObjectsTests {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             // Track published messages
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
+                return PublishResult(serials: messages.map { _ in "serial_\(UUID().uuidString)" })
             }
 
             // Call createMap with no entries
@@ -1281,6 +1293,11 @@ struct InternalDefaultRealtimeObjectsTests {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             // Track published messages and the generated objectId
             var publishedMessages: [OutboundObjectMessage] = []
             var maybeGeneratedObjectID: String?
@@ -1297,6 +1314,7 @@ struct InternalDefaultRealtimeObjectsTests {
                     // This simulates the object already existing when createMap tries to get it, before the publish operation completes (e.g. because it has been populated by receipt of an OBJECT)
                     maybeExistingObject = realtimeObjects.testsOnly_createZeroValueLiveObject(forObjectID: objectID)?.mapValue
                 }
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
             // Call createMap - the publishHandler will create the object with the generated ID
@@ -1346,10 +1364,16 @@ struct InternalDefaultRealtimeObjectsTests {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, serverTime: .init(timeIntervalSince1970: 1_754_042_434), internalQueue: internalQueue)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             // Track published messages
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
+                return PublishResult(serials: messages.map { _ in "serial_\(UUID().uuidString)" })
             }
 
             // Call createCounter
@@ -1380,10 +1404,16 @@ struct InternalDefaultRealtimeObjectsTests {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             // Track published messages
             var publishedMessages: [OutboundObjectMessage] = []
             coreSDK.setPublishHandler { messages in
                 publishedMessages.append(contentsOf: messages)
+                return PublishResult(serials: messages.map { _ in "serial_\(UUID().uuidString)" })
             }
 
             // Call createCounter with no count
@@ -1409,6 +1439,11 @@ struct InternalDefaultRealtimeObjectsTests {
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
 
+            // Transition to synced state (required for publishAndApply)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: false)
+            }
+
             // Track published messages and the generated objectId
             var publishedMessages: [OutboundObjectMessage] = []
             var maybeGeneratedObjectID: String?
@@ -1425,6 +1460,7 @@ struct InternalDefaultRealtimeObjectsTests {
                     // This simulates the object already existing when createMap tries to get it, before the publish operation completes (e.g. because it has been populated by receipt of an OBJECT)
                     maybeExistingObject = realtimeObjects.testsOnly_createZeroValueLiveObject(forObjectID: objectID)?.counterValue
                 }
+                return PublishResult(serials: messages.map { _ in nil })
             }
 
             // Call createCounter - the publishHandler will create the object with the generated ID
