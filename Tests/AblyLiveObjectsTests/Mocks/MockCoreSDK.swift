@@ -15,9 +15,17 @@ final class MockCoreSDK: CoreSDK {
         self.serverTime = serverTime
     }
 
-    func publish(objectMessages: [OutboundObjectMessage]) async throws(ARTErrorInfo) {
+    func nosync_publish(objectMessages: [OutboundObjectMessage], callback: @escaping @Sendable (Result<Void, ARTErrorInfo>) -> Void) {
         if let handler = _publishHandler {
-            try await handler(objectMessages)
+            let queue = channelStateMutex.dispatchQueue
+            Task {
+                do throws(ARTErrorInfo) {
+                    try await handler(objectMessages)
+                    queue.async { callback(.success(())) }
+                } catch {
+                    queue.async { callback(.failure(error)) }
+                }
+            }
         } else {
             protocolRequirementNotImplemented()
         }
@@ -38,7 +46,7 @@ final class MockCoreSDK: CoreSDK {
         }
     }
 
-    func fetchServerTime() async throws(ARTErrorInfo) -> Date {
-        serverTime
+    func nosync_fetchServerTime(callback: @escaping @Sendable (Result<Date, ARTErrorInfo>) -> Void) {
+        callback(.success(serverTime))
     }
 }

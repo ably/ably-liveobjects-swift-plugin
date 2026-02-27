@@ -6,12 +6,12 @@ import Ably
 /// This provides us with a mockable interface to ably-cocoa, and it also allows internal components and their tests not to need to worry about some of the boring details of how we bridge Swift types to `_AblyPluginSupportPrivate`'s Objective-C API (i.e. boxing).
 internal protocol CoreSDK: AnyObject, Sendable {
     /// Implements the internal `#publish` method of RTO15.
-    func publish(objectMessages: [OutboundObjectMessage]) async throws(ARTErrorInfo)
+    func nosync_publish(objectMessages: [OutboundObjectMessage], callback: @escaping @Sendable (Result<Void, ARTErrorInfo>) -> Void)
 
     /// Implements the server time fetch of RTO16, including the storing and usage of the local clock offset.
-    func fetchServerTime() async throws(ARTErrorInfo) -> Date
+    func nosync_fetchServerTime(callback: @escaping @Sendable (Result<Date, ARTErrorInfo>) -> Void)
 
-    /// Replaces the implementation of ``publish(objectMessages:)``.
+    /// Replaces the implementation of ``nosync_publish(objectMessages:callback:)``.
     ///
     /// Used by integration tests, for example to disable `ObjectMessage` publishing so that a test can verify that a behaviour is not a side effect of an `ObjectMessage` sent by the SDK.
     func testsOnly_overridePublish(with newImplementation: @escaping ([OutboundObjectMessage]) async throws(ARTErrorInfo) -> Void)
@@ -29,8 +29,6 @@ internal final class DefaultCoreSDK: CoreSDK {
     private let pluginAPI: PluginAPIProtocol
     private let logger: Logger
 
-    /// If set to true, ``publish(objectMessages:)`` will behave like a no-op.
-    ///
     /// This enables the `testsOnly_overridePublish(with:)` test hook.
     ///
     /// - Note: This should be `throws(ARTErrorInfo)` but that causes a compilation error of "Runtime support for typed throws function types is only available in macOS 15.0.0 or newer".
@@ -50,31 +48,36 @@ internal final class DefaultCoreSDK: CoreSDK {
 
     // MARK: - CoreSDK conformance
 
-    internal func publish(objectMessages: [OutboundObjectMessage]) async throws(ARTErrorInfo) {
-        logger.log("publish(objectMessages: \(LoggingUtilities.formatObjectMessagesForLogging(objectMessages)))", level: .debug)
+    internal func nosync_publish(objectMessages: [OutboundObjectMessage], callback: @escaping @Sendable (Result<Void, ARTErrorInfo>) -> Void) {
+        logger.log("nosync_publish(objectMessages: \(LoggingUtilities.formatObjectMessagesForLogging(objectMessages)))", level: .debug)
 
         // Use the overridden implementation if supplied
         let overriddenImplementation = mutex.withLock {
             overriddenPublishImplementation
         }
         if let overriddenImplementation {
-            do {
-                try await overriddenImplementation(objectMessages)
-            } catch {
-                guard let artErrorInfo = error as? ARTErrorInfo else {
-                    preconditionFailure("Expected ARTErrorInfo, got \(error)")
+            let queue = pluginAPI.internalQueue(for: client)
+            Task {
+                do {
+                    try await overriddenImplementation(objectMessages)
+                    queue.async { callback(.success(())) }
+                } catch {
+                    guard let artErrorInfo = error as? ARTErrorInfo else {
+                        preconditionFailure("Expected ARTErrorInfo, got \(error)")
+                    }
+                    queue.async { callback(.failure(artErrorInfo)) }
                 }
-                throw artErrorInfo
             }
             return
         }
 
         // TODO: Implement message size checking (https://github.com/ably/ably-liveobjects-swift-plugin/issues/13)
-        try await DefaultInternalPlugin.sendObject(
+        DefaultInternalPlugin.nosync_sendObject(
             objectMessages: objectMessages,
             channel: channel,
             client: client,
             pluginAPI: pluginAPI,
+            callback: callback,
         )
     }
 
@@ -84,26 +87,21 @@ internal final class DefaultCoreSDK: CoreSDK {
         }
     }
 
-    internal func fetchServerTime() async throws(ARTErrorInfo) -> Date {
-        try await withCheckedContinuation { (continuation: CheckedContinuation<Result<Date, ARTErrorInfo>, _>) in
-            let internalQueue = pluginAPI.internalQueue(for: client)
+    internal func nosync_fetchServerTime(callback: @escaping @Sendable (Result<Date, ARTErrorInfo>) -> Void) {
+        let internalQueue = pluginAPI.internalQueue(for: client)
 
-            internalQueue.async { [client, pluginAPI] in
-                pluginAPI.nosync_fetchServerTime(for: client) { serverTime, error in
-                    // We don't currently rely on this documented behaviour of `noSync_fetchServerTime` but we may do later, so assert it to be sure it's happening.
-                    dispatchPrecondition(condition: .onQueue(internalQueue))
+        pluginAPI.nosync_fetchServerTime(for: client) { serverTime, error in
+            dispatchPrecondition(condition: .onQueue(internalQueue))
 
-                    if let error {
-                        continuation.resume(returning: .failure(ARTErrorInfo.castPluginPublicErrorInfo(error)))
-                    } else {
-                        guard let serverTime else {
-                            preconditionFailure("nosync_fetchServerTime gave nil serverTime and nil error")
-                        }
-                        continuation.resume(returning: .success(serverTime))
-                    }
+            if let error {
+                callback(.failure(ARTErrorInfo.castPluginPublicErrorInfo(error)))
+            } else {
+                guard let serverTime else {
+                    preconditionFailure("nosync_fetchServerTime gave nil serverTime and nil error")
                 }
+                callback(.success(serverTime))
             }
-        }.get()
+        }
     }
 
     internal var nosync_channelState: _AblyPluginSupportPrivate.RealtimeChannelState {
