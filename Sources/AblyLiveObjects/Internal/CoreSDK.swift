@@ -29,7 +29,7 @@ internal final class DefaultCoreSDK: CoreSDK {
     private let pluginAPI: PluginAPIProtocol
     private let logger: Logger
 
-    /// If set to true, ``publish(objectMessages:)`` will behave like a no-op.
+    /// If set, ``publish(objectMessages:)`` delegates to this implementation.
     ///
     /// This enables the `testsOnly_overridePublish(with:)` test hook.
     ///
