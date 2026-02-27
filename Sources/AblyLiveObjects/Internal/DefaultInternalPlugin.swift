@@ -152,32 +152,27 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
 
     // MARK: - Sending `OBJECT` ProtocolMessage
 
-    internal static func sendObject(
+    internal static func nosync_sendObject(
         objectMessages: [OutboundObjectMessage],
         channel: _AblyPluginSupportPrivate.RealtimeChannel,
         client: _AblyPluginSupportPrivate.RealtimeClient,
         pluginAPI: PluginAPIProtocol,
-    ) async throws(ARTErrorInfo) {
+        callback: @escaping @Sendable (Result<Void, ARTErrorInfo>) -> Void,
+    ) {
         let objectMessageBoxes: [ObjectMessageBox<OutboundObjectMessage>] = objectMessages.map { .init(objectMessage: $0) }
+        let internalQueue = pluginAPI.internalQueue(for: client)
 
-        try await withCheckedContinuation { (continuation: CheckedContinuation<Result<Void, ARTErrorInfo>, _>) in
-            let internalQueue = pluginAPI.internalQueue(for: client)
+        pluginAPI.nosync_sendObject(
+            withObjectMessages: objectMessageBoxes,
+            channel: channel,
+        ) { error in
+            dispatchPrecondition(condition: .onQueue(internalQueue))
 
-            internalQueue.async {
-                pluginAPI.nosync_sendObject(
-                    withObjectMessages: objectMessageBoxes,
-                    channel: channel,
-                ) { error in
-                    // We don't currently rely on this documented behaviour of `nosync_sendObject` but we may do later, so assert it to be sure it's happening.
-                    dispatchPrecondition(condition: .onQueue(internalQueue))
-
-                    if let error {
-                        continuation.resume(returning: .failure(ARTErrorInfo.castPluginPublicErrorInfo(error)))
-                    } else {
-                        continuation.resume(returning: .success(()))
-                    }
-                }
+            if let error {
+                callback(.failure(ARTErrorInfo.castPluginPublicErrorInfo(error)))
+            } else {
+                callback(.success(()))
             }
-        }.get()
+        }
     }
 }
