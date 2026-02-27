@@ -29,8 +29,6 @@ internal final class DefaultCoreSDK: CoreSDK {
     private let pluginAPI: PluginAPIProtocol
     private let logger: Logger
 
-    /// If set to true, ``publish(objectMessages:)`` will behave like a no-op.
-    ///
     /// This enables the `testsOnly_overridePublish(with:)` test hook.
     ///
     /// - Note: This should be `throws(ARTErrorInfo)` but that causes a compilation error of "Runtime support for typed throws function types is only available in macOS 15.0.0 or newer".
