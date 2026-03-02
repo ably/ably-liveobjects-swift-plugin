@@ -16,7 +16,13 @@ final class MockCoreSDK: CoreSDK {
     }
 
     func publish(objectMessages: [OutboundObjectMessage]) async throws(ARTErrorInfo) {
-        if let handler = _publishHandler {
+        // We can't return _publishHandler from `mutex.withLock` because we get "error: runtime support for typed throws function types is only available in macOS 15.0.0 or newer"
+        var handler: (([OutboundObjectMessage]) async throws(ARTErrorInfo) -> Void)?
+        mutex.withLock {
+            handler = _publishHandler
+        }
+
+        if let handler {
             try await handler(objectMessages)
         } else {
             protocolRequirementNotImplemented()
