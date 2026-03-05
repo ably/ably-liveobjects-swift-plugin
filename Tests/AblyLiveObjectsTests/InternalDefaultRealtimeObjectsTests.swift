@@ -623,6 +623,231 @@ struct InternalDefaultRealtimeObjectsTests {
             let newRoot = realtimeObjects.testsOnly_objectsPool.root
             #expect(newRoot.testsOnly_data.isEmpty) // Should be zero-valued (empty)
         }
+
+        // MARK: - RTO4d Buffered Operations Tests
+
+        // @spec RTO4d
+        @Test
+        func bufferedObjectOperationsAreDiscardedOnAttached() {
+            let internalQueue = TestFactories.createInternalQueue()
+            let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
+            let sequenceId = "seq1"
+
+            // Start a sync sequence with a cursor (so it doesn't complete immediately)
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectSyncProtocolMessage(
+                    objectMessages: [
+                        TestFactories.mapObjectMessage(objectId: "map:sync@100"),
+                    ],
+                    protocolMessageChannelSerial: "\(sequenceId):cursor1",
+                )
+            }
+
+            // Inject an OBJECT operation; it will be buffered per RTO8a
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectProtocolMessage(objectMessages: [
+                    TestFactories.mapCreateOperationMessage(objectId: "map:pre-attached@200"),
+                ])
+            }
+
+            #expect(realtimeObjects.testsOnly_bufferedObjectOperationsCount == 1)
+
+            // Receive ATTACHED with HAS_OBJECTS — buffer should be cleared per RTO4d
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: true)
+            }
+
+            #expect(realtimeObjects.testsOnly_bufferedObjectOperationsCount == 0)
+
+            // Inject another OBJECT operation after ATTACHED
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectProtocolMessage(objectMessages: [
+                    TestFactories.mapCreateOperationMessage(objectId: "map:post-attached@300"),
+                ])
+            }
+
+            // Complete the sync sequence
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectSyncProtocolMessage(
+                    objectMessages: [],
+                    protocolMessageChannelSerial: "\(sequenceId):",
+                )
+            }
+
+            // Only the post-ATTACHED operation should have been applied
+            let pool = realtimeObjects.testsOnly_objectsPool
+            #expect(pool.entries["map:pre-attached@200"] == nil)
+            #expect(pool.entries["map:post-attached@300"] != nil)
+        }
+
+        // @spec RTO4d
+        @Test
+        func bufferedObjectOperationsAreDiscardedWhenAlreadySyncingChannelReceivesAttached() {
+            let internalQueue = TestFactories.createInternalQueue()
+            let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
+            let sequenceId = "seq1"
+
+            // Transition to SYNCING via a first ATTACHED
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: true)
+            }
+
+            // Start a sync sequence
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectSyncProtocolMessage(
+                    objectMessages: [
+                        TestFactories.mapObjectMessage(objectId: "map:sync@100"),
+                    ],
+                    protocolMessageChannelSerial: "\(sequenceId):cursor1",
+                )
+            }
+
+            // Inject an OBJECT operation; it will be buffered per RTO8a
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectProtocolMessage(objectMessages: [
+                    TestFactories.mapCreateOperationMessage(objectId: "map:pre-attached@200"),
+                ])
+            }
+
+            #expect(realtimeObjects.testsOnly_bufferedObjectOperationsCount == 1)
+
+            // Receive another ATTACHED (e.g. due to RESUMED) — buffer should be cleared per RTO4d
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_onChannelAttached(hasObjects: true)
+            }
+
+            #expect(realtimeObjects.testsOnly_bufferedObjectOperationsCount == 0)
+
+            // Inject another OBJECT operation after the second ATTACHED
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectProtocolMessage(objectMessages: [
+                    TestFactories.mapCreateOperationMessage(objectId: "map:post-attached@300"),
+                ])
+            }
+
+            // Complete the sync sequence
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectSyncProtocolMessage(
+                    objectMessages: [],
+                    protocolMessageChannelSerial: "\(sequenceId):",
+                )
+            }
+
+            // Only the post-ATTACHED operation should have been applied
+            let pool = realtimeObjects.testsOnly_objectsPool
+            #expect(pool.entries["map:pre-attached@200"] == nil)
+            #expect(pool.entries["map:post-attached@300"] != nil)
+        }
+
+        // Verifies that RTO5a2b (replaced by RTO4d) no longer clears buffered operations on new OBJECT_SYNC sequence
+        @Test
+        func bufferedObjectOperationsAreNotDiscardedOnNewObjectSyncSequence() {
+            let internalQueue = TestFactories.createInternalQueue()
+            let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
+            let firstSequenceId = "seq1"
+            let secondSequenceId = "seq2"
+
+            // Start a first sync sequence
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectSyncProtocolMessage(
+                    objectMessages: [
+                        TestFactories.mapObjectMessage(objectId: "map:sync1@100"),
+                    ],
+                    protocolMessageChannelSerial: "\(firstSequenceId):cursor1",
+                )
+            }
+
+            // Inject an OBJECT operation; it will be buffered per RTO8a
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectProtocolMessage(objectMessages: [
+                    TestFactories.mapCreateOperationMessage(objectId: "map:buffered1@200"),
+                ])
+            }
+
+            #expect(realtimeObjects.testsOnly_bufferedObjectOperationsCount == 1)
+
+            // Start a new sync sequence with a different ID — buffer should NOT be cleared
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectSyncProtocolMessage(
+                    objectMessages: [
+                        TestFactories.mapObjectMessage(objectId: "map:sync2@300"),
+                    ],
+                    protocolMessageChannelSerial: "\(secondSequenceId):cursor1",
+                )
+            }
+
+            // Inject another OBJECT operation
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectProtocolMessage(objectMessages: [
+                    TestFactories.mapCreateOperationMessage(objectId: "map:buffered2@400"),
+                ])
+            }
+
+            #expect(realtimeObjects.testsOnly_bufferedObjectOperationsCount == 2)
+
+            // Complete the second sync sequence
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectSyncProtocolMessage(
+                    objectMessages: [],
+                    protocolMessageChannelSerial: "\(secondSequenceId):",
+                )
+            }
+
+            // Both buffered operations should have been applied (buffer was NOT cleared by new sequence)
+            let pool = realtimeObjects.testsOnly_objectsPool
+            #expect(pool.entries["map:buffered1@200"] != nil)
+            #expect(pool.entries["map:buffered2@400"] != nil)
+        }
+
+        // Verifies that operations are buffered when OBJECT_SYNC is received after a completed sync without a preceding ATTACHED (RTO5e resync)
+        @Test
+        func operationsAreBufferedDuringResyncWithoutPrecedingAttached() {
+            let internalQueue = TestFactories.createInternalQueue()
+            let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
+            let firstSequenceId = "seq1"
+            let resyncSequenceId = "seq2"
+
+            // Complete an initial sync to reach SYNCED state
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectSyncProtocolMessage(
+                    objectMessages: [
+                        TestFactories.mapObjectMessage(objectId: "map:initial@100"),
+                    ],
+                    protocolMessageChannelSerial: nil, // Complete sync immediately
+                )
+            }
+
+            // Receive an OBJECT_SYNC without a preceding ATTACHED — triggers RTO5e resync
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectSyncProtocolMessage(
+                    objectMessages: [
+                        TestFactories.mapObjectMessage(objectId: "map:resync@200"),
+                    ],
+                    protocolMessageChannelSerial: "\(resyncSequenceId):cursor1",
+                )
+            }
+
+            // Inject an OBJECT operation; should be buffered since we're now SYNCING again
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectProtocolMessage(objectMessages: [
+                    TestFactories.mapCreateOperationMessage(objectId: "map:buffered@300"),
+                ])
+            }
+
+            #expect(realtimeObjects.testsOnly_bufferedObjectOperationsCount == 1)
+
+            // Complete the resync sequence
+            internalQueue.ably_syncNoDeadlock {
+                realtimeObjects.nosync_handleObjectSyncProtocolMessage(
+                    objectMessages: [],
+                    protocolMessageChannelSerial: "\(resyncSequenceId):",
+                )
+            }
+
+            // Buffered operation should have been applied upon completion
+            let pool = realtimeObjects.testsOnly_objectsPool
+            #expect(pool.entries["map:buffered@300"] != nil)
+        }
     }
 
     /// Tests for `InternalDefaultRealtimeObjects.getRoot`, covering RTO1 specification points
