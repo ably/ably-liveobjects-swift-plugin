@@ -176,35 +176,54 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
     }
 
     internal func createMap(entries: [String: InternalLiveMapValue], coreSDK: CoreSDK) async throws(ARTErrorInfo) -> InternalDefaultLiveMap {
-        try mutableStateMutex.withSync { _ throws(ARTErrorInfo) in
-            // RTO11d
-            try coreSDK.nosync_validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "RealtimeObjects.createMap")
-        }
+        try await withCheckedContinuation { (continuation: CheckedContinuation<Result<InternalDefaultLiveMap, ARTErrorInfo>, _>) in
+            do throws(ARTErrorInfo) {
+                try mutableStateMutex.withSync { _ throws(ARTErrorInfo) in
+                    // RTO11d
+                    try coreSDK.nosync_validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "RealtimeObjects.createMap")
 
-        // RTO11f7
-        let timestamp = try await coreSDK.fetchServerTime()
+                    // RTO11f7
+                    coreSDK.nosync_fetchServerTime { [self] result in
+                        let timestamp: Date
+                        switch result {
+                        case let .failure(error):
+                            continuation.resume(returning: .failure(error))
+                            return
+                        case let .success(t):
+                            timestamp = t
+                        }
 
-        let creationOperation = mutableStateMutex.withSync { _ in
-            // RTO11f
-            ObjectCreationHelpers.nosync_creationOperationForLiveMap(
-                entries: entries,
-                timestamp: timestamp,
-            )
-        }
+                        // RTO11f
+                        let creationOperation = ObjectCreationHelpers.nosync_creationOperationForLiveMap(
+                            entries: entries,
+                            timestamp: timestamp,
+                        )
 
-        // RTO11g
-        try await coreSDK.publish(objectMessages: [creationOperation.objectMessage])
-
-        // RTO11h
-        return mutableStateMutex.withSync { mutableState in
-            mutableState.objectsPool.nosync_getOrCreateMap(
-                creationOperation: creationOperation,
-                logger: logger,
-                internalQueue: mutableStateMutex.dispatchQueue,
-                userCallbackQueue: userCallbackQueue,
-                clock: clock,
-            )
-        }
+                        // RTO11g
+                        coreSDK.nosync_publish(objectMessages: [creationOperation.objectMessage]) { [self] result in
+                            switch result {
+                            case let .failure(error):
+                                continuation.resume(returning: .failure(error))
+                            case .success:
+                                // RTO11h
+                                let map = mutableStateMutex.withoutSync { mutableState in
+                                    mutableState.objectsPool.nosync_getOrCreateMap(
+                                        creationOperation: creationOperation,
+                                        logger: logger,
+                                        internalQueue: mutableStateMutex.dispatchQueue,
+                                        userCallbackQueue: userCallbackQueue,
+                                        clock: clock,
+                                    )
+                                }
+                                continuation.resume(returning: .success(map))
+                            }
+                        }
+                    }
+                }
+            } catch {
+                continuation.resume(returning: .failure(error))
+            }
+        }.get()
     }
 
     internal func createMap(coreSDK: CoreSDK) async throws(ARTErrorInfo) -> InternalDefaultLiveMap {
@@ -213,39 +232,60 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
     }
 
     internal func createCounter(count: Double, coreSDK: CoreSDK) async throws(ARTErrorInfo) -> InternalDefaultLiveCounter {
-        // RTO12d
-        try mutableStateMutex.withSync { _ throws(ARTErrorInfo) in
-            try coreSDK.nosync_validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "RealtimeObjects.createCounter")
-        }
+        try await withCheckedContinuation { (continuation: CheckedContinuation<Result<InternalDefaultLiveCounter, ARTErrorInfo>, _>) in
+            do throws(ARTErrorInfo) {
+                try mutableStateMutex.withSync { _ throws(ARTErrorInfo) in
+                    // RTO12d
+                    try coreSDK.nosync_validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "RealtimeObjects.createCounter")
 
-        // RTO12f1
-        if !count.isFinite {
-            throw LiveObjectsError.counterInitialValueInvalid(value: count).toARTErrorInfo()
-        }
+                    // RTO12f1
+                    if !count.isFinite {
+                        throw LiveObjectsError.counterInitialValueInvalid(value: count).toARTErrorInfo()
+                    }
 
-        // RTO12f
+                    // RTO12f
 
-        // RTO12f5
-        let timestamp = try await coreSDK.fetchServerTime()
+                    // RTO12f5
+                    coreSDK.nosync_fetchServerTime { [self] result in
+                        let timestamp: Date
+                        switch result {
+                        case let .failure(error):
+                            continuation.resume(returning: .failure(error))
+                            return
+                        case let .success(t):
+                            timestamp = t
+                        }
 
-        let creationOperation = ObjectCreationHelpers.creationOperationForLiveCounter(
-            count: count,
-            timestamp: timestamp,
-        )
+                        let creationOperation = ObjectCreationHelpers.creationOperationForLiveCounter(
+                            count: count,
+                            timestamp: timestamp,
+                        )
 
-        // RTO12g
-        try await coreSDK.publish(objectMessages: [creationOperation.objectMessage])
-
-        // RTO12h
-        return mutableStateMutex.withSync { mutableState in
-            mutableState.objectsPool.nosync_getOrCreateCounter(
-                creationOperation: creationOperation,
-                logger: logger,
-                internalQueue: mutableStateMutex.dispatchQueue,
-                userCallbackQueue: userCallbackQueue,
-                clock: clock,
-            )
-        }
+                        // RTO12g
+                        coreSDK.nosync_publish(objectMessages: [creationOperation.objectMessage]) { [self] result in
+                            switch result {
+                            case let .failure(error):
+                                continuation.resume(returning: .failure(error))
+                            case .success:
+                                // RTO12h
+                                let counter = mutableStateMutex.withoutSync { mutableState in
+                                    mutableState.objectsPool.nosync_getOrCreateCounter(
+                                        creationOperation: creationOperation,
+                                        logger: logger,
+                                        internalQueue: mutableStateMutex.dispatchQueue,
+                                        userCallbackQueue: userCallbackQueue,
+                                        clock: clock,
+                                    )
+                                }
+                                continuation.resume(returning: .success(counter))
+                            }
+                        }
+                    }
+                }
+            } catch {
+                continuation.resume(returning: .failure(error))
+            }
+        }.get()
     }
 
     internal func createCounter(coreSDK: CoreSDK) async throws(ARTErrorInfo) -> InternalDefaultLiveCounter {
@@ -368,7 +408,13 @@ internal final class InternalDefaultRealtimeObjects: Sendable, LiveMapObjectsPoo
 
     // This is currently exposed so that we can try calling it from the tests in the early days of the SDK to check that we can send an OBJECT ProtocolMessage. We'll probably make it private later on.
     internal func testsOnly_publish(objectMessages: [OutboundObjectMessage], coreSDK: CoreSDK) async throws(ARTErrorInfo) {
-        try await coreSDK.publish(objectMessages: objectMessages)
+        try await withCheckedContinuation { (continuation: CheckedContinuation<Result<Void, ARTErrorInfo>, _>) in
+            mutableStateMutex.withSync { _ in
+                coreSDK.nosync_publish(objectMessages: objectMessages) { result in
+                    continuation.resume(returning: result)
+                }
+            }
+        }.get()
     }
 
     // MARK: - Garbage collection of deleted objects and map entries
