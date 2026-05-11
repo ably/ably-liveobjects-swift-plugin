@@ -11,6 +11,7 @@
 - `CompactedValue` is represented by a JSON-like type whose collection cases have class instances as their associated data, to allow cycles (see https://github.com/ably/ably-js/pull/2122/files)
   - also do we need an API to allow people to try and convert this to a `JSONValue`?
 - I've introduced the `Primitive` type which was omitted from Swift in the first API, because it's now used in multiple places (i.e. there are `value` getters that return one). And for consistency I've updated `Value` to use it, even though it adds a layer of indirection.
+- I haven't ported `PrimitivePathObject` because it doesn't really have anything to offer us in Swift — its only methods `value()` and `compact()` are available via `PathObject` anyway. (Writing this point months later; I _think_ this was my logic). Can revisit this if we want to be consistent or anticipate adding further methods to `PrimitivePathObject` in the future.
 
 ## Not done
 
