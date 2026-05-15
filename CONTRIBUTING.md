@@ -88,6 +88,16 @@ We follow the same naming convention as in ably-cocoa whereby if a method's name
 
 We have an extension on `DispatchQueue`, `ably_syncNoDeadlock(execute:)`, which behaves the same as `sync(execute:)` but with a runtime precondition that we are not already on the queue; favour our extension in order to avoid deadlock.
 
+### Time-related operations
+
+All time-dependent code in the plugin goes through the SDK's injected time provider, accessed via the `APPluginAPI` boundary. This indirection lets the Universal Test Suite install a single fake-time implementation that controls every clock-dependent code path across both ably-cocoa and this plugin.
+
+New code MUST obtain time and scheduling primitives from `APPluginAPI` (the `PluginAPIProtocol` instance the plugin receives at construction) rather than calling system primitives directly:
+
+- Don't call `Date()` / `Date.now` directly. Use `pluginAPI.wallClockNow(for: client)`, or — when going through the existing internal `SimpleClock` abstraction — `clock.now`. The production `DefaultSimpleClock` is an adapter that ultimately routes to `pluginAPI.wallClockNow(for: client)`.
+- Don't call `Task.sleep(nanoseconds:)`, `DispatchQueue.asyncAfter`, or `Timer` directly to wait for a delay. Use the `PluginAPIProtocol.sleep(seconds:for:)` async extension defined in `PluginAPISleep.swift`, which honours `Task` cancellation by throwing `CancellationError`.
+- Don't reach into ably-cocoa's internal `ARTTimeProvider` via `import Ably.Private` from production plugin code. The internal abstraction is reachable from `Ably.Private`, but only the test fake should consume it directly; production code goes through `APPluginAPI`.
+
 ### Testing guidelines
 
 #### Attributing tests to a spec point
