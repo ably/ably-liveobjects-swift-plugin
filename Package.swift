@@ -77,6 +77,19 @@ let package = Package(
                 .copy("ably-common"),
             ],
         ),
+        .testTarget(
+            name: "UniversalTestSuite",
+            dependencies: [
+                "AblyLiveObjects",
+                .product(
+                    name: "Ably",
+                    package: "ably-cocoa",
+                ),
+            ],
+            exclude: [
+                "CLAUDE.md",
+            ],
+        ),
         .executableTarget(
             name: "BuildTool",
             dependencies: [
