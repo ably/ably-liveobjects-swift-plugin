@@ -62,8 +62,9 @@ internal final class DefaultInternalPlugin: NSObject, _AblyPluginSupportPrivate.
             logger: logger,
             internalQueue: internalQueue,
             userCallbackQueue: callbackQueue,
-            clock: DefaultSimpleClock(),
+            clock: DefaultSimpleClock(pluginAPI: pluginAPI, client: client),
             garbageCollectionOptions: garbageCollectionOptions,
+            sleep: { [pluginAPI = self.pluginAPI, client] in try await pluginAPI.sleep(seconds: $0, for: client) },
         )
         pluginAPI.nosync_setPluginDataValue(liveObjects, forKey: Self.pluginDataKey, channel: channel)
     }

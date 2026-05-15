@@ -117,7 +117,8 @@ internal final class InternalDefaultRealtimeObjects: Sendable, InternalRealtimeO
         internalQueue: DispatchQueue,
         userCallbackQueue: DispatchQueue,
         clock: SimpleClock,
-        garbageCollectionOptions: GarbageCollectionOptions = .init()
+        garbageCollectionOptions: GarbageCollectionOptions = .init(),
+        sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * Double(NSEC_PER_SEC))) },
     ) {
         self.logger = logger
         self.userCallbackQueue = userCallbackQueue
@@ -140,11 +141,11 @@ internal final class InternalDefaultRealtimeObjects: Sendable, InternalRealtimeO
         )
         garbageCollectionInterval = garbageCollectionOptions.interval
 
-        garbageCollectionTask = Task { [weak self, garbageCollectionInterval] in
+        garbageCollectionTask = Task { [weak self, garbageCollectionInterval, sleep] in
             do {
                 while true {
                     logger.log("Will perform garbage collection in \(garbageCollectionInterval)s", level: .debug)
-                    try await Task.sleep(nanoseconds: UInt64(garbageCollectionInterval * Double(NSEC_PER_SEC)))
+                    try await sleep(garbageCollectionInterval)
 
                     guard let self else {
                         return
