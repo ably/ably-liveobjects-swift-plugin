@@ -1056,8 +1056,8 @@ internal final class InternalDefaultLiveMap: Sendable {
         /// Converts an InternalObjectsMapEntry to LiveMapValue using the same logic as get(key:)
         /// This is used by entries to ensure consistent value conversion
         private func nosync_convertEntryToLiveMapValue(_ entry: InternalObjectsMapEntry, objectsPool: ObjectsPool) -> InternalLiveMapValue? {
-            // RTLM5d2a: If ObjectsMapEntry.tombstone is true, return undefined/null
-            if entry.tombstone == true {
+            // RTLM5d2h: If the ObjectsMapEntry is tombstoned (per RTLM14), return undefined/null
+            if Self.nosync_isEntryTombstoned(entry, objectsPool: objectsPool) {
                 return nil
             }
 
@@ -1097,11 +1097,6 @@ internal final class InternalDefaultLiveMap: Sendable {
             if let objectId = entry.data?.objectId {
                 // RTLM5d2f1: If an object with id objectId does not exist, return undefined/null
                 guard let poolEntry = objectsPool.entries[objectId] else {
-                    return nil
-                }
-
-                // RTLM5d2f3: If referenced object is tombstoned, return nil
-                if poolEntry.nosync_isTombstone {
                     return nil
                 }
 

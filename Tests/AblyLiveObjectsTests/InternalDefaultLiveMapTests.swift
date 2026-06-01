@@ -37,7 +37,7 @@ struct InternalDefaultLiveMapTests {
             #expect(try map.get(key: "nonexistent", coreSDK: coreSDK, delegate: MockLiveMapObjectsPoolDelegate(internalQueue: internalQueue)) == nil)
         }
 
-        // @spec RTLM5d2a
+        // @spec RTLM5d2h
         @Test
         func returnsNilWhenEntryIsTombstoned() throws {
             let logger = TestLogger()
