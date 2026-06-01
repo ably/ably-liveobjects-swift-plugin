@@ -24,8 +24,8 @@ struct ObjectCreationHelpersTests {
             let logger = TestLogger()
             let clock = MockSimpleClock()
             let internalQueue = TestFactories.createInternalQueue()
-            let referencedMap = InternalDefaultLiveMap.createZeroValued(objectID: "referencedMapID", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
-            let referencedCounter = InternalDefaultLiveCounter.createZeroValued(objectID: "referencedCounterID", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
+            let referencedMap = InternalDefaultLiveMap.createEmpty(objectID: "referencedMapID", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
+            let referencedCounter = InternalDefaultLiveCounter.createEmpty(objectID: "referencedCounterID", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: clock)
 
             // When
             let creationOperation = internalQueue.ably_syncNoDeadlock {

@@ -59,11 +59,11 @@ internal final class InternalDefaultLiveCounter: Sendable {
         self.clock = clock
     }
 
-    /// Creates a "zero-value LiveCounter", per RTLC4.
+    /// Creates a new empty LiveCounter, per RTLC4.
     ///
     /// - Parameters:
-    ///   - objectID: The value for the "private objectId field" of RTO5c1b1a.
-    internal static func createZeroValued(
+    ///   - objectID: The `objectId` to set upon creation, per RTLC4a.
+    internal static func createEmpty(
         objectID: String,
         logger: Logger,
         internalQueue: DispatchQueue,
@@ -486,8 +486,8 @@ internal final class InternalDefaultLiveCounter: Sendable {
         }
 
         /// Needed for ``InternalLiveObject`` conformance.
-        mutating func resetDataToZeroValued() {
-            // RTLC4
+        mutating func resetDataToEmpty() {
+            // RTLC17a
             data = 0
         }
 

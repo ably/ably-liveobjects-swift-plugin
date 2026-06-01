@@ -22,29 +22,29 @@ private extension SyncObjectsPool {
 }
 
 struct ObjectsPoolTests {
-    /// Tests for the `createZeroValueObject` method, covering RTO6 specification points
-    struct CreateZeroValueObjectTests {
+    /// Tests for the `createEmptyObject` method, covering RTO6 specification points
+    struct CreateEmptyObjectTests {
         // @spec RTO6a
         @Test
         func returnsExistingObject() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let existingMap = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let existingMap = InternalDefaultLiveMap.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock(), testsOnly_otherEntries: ["map:123@456": .map(existingMap)])
 
-            let result = pool.createZeroValueObject(forObjectID: "map:123@456", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let result = pool.createEmptyObject(forObjectID: "map:123@456", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let map = try #require(result?.mapValue)
             #expect(map as AnyObject === existingMap as AnyObject)
         }
 
         // @spec RTO6b2
         @Test
-        func createsZeroValueMap() throws {
+        func createsEmptyMap() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
             var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
 
-            let result = pool.createZeroValueObject(forObjectID: "map:123@456", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let result = pool.createEmptyObject(forObjectID: "map:123@456", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let map = try #require(result?.mapValue)
 
             // Verify it was added to the pool
@@ -56,13 +56,13 @@ struct ObjectsPoolTests {
 
         // @spec RTO6b3
         @Test
-        func createsZeroValueCounter() throws {
+        func createsEmptyCounter() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
             var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
 
-            let result = pool.createZeroValueObject(forObjectID: "counter:123@456", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let result = pool.createEmptyObject(forObjectID: "counter:123@456", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let counter = try #require(result?.counterValue)
             #expect(try counter.value(coreSDK: coreSDK) == 0)
 
@@ -79,7 +79,7 @@ struct ObjectsPoolTests {
             let internalQueue = TestFactories.createInternalQueue()
             var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
 
-            let result = pool.createZeroValueObject(forObjectID: "invalid", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let result = pool.createEmptyObject(forObjectID: "invalid", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             #expect(result == nil)
         }
 
@@ -90,7 +90,7 @@ struct ObjectsPoolTests {
             let internalQueue = TestFactories.createInternalQueue()
             var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
 
-            let result = pool.createZeroValueObject(forObjectID: "unknown:123@456", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let result = pool.createEmptyObject(forObjectID: "unknown:123@456", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             #expect(result == nil)
             #expect(pool.entries["unknown:123@456"] == nil)
         }
@@ -110,7 +110,7 @@ struct ObjectsPoolTests {
             let internalQueue = TestFactories.createInternalQueue()
             let delegate = MockLiveMapObjectsPoolDelegate(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
-            let existingMap = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let existingMap = InternalDefaultLiveMap.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let existingMapSubscriber = Subscriber<DefaultLiveMapUpdate, SubscribeResponse>(callbackQueue: .main)
             try existingMap.subscribe(listener: existingMapSubscriber.createListener(), coreSDK: coreSDK)
             var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock(), testsOnly_otherEntries: ["map:hash@123": .map(existingMap)])
@@ -154,7 +154,7 @@ struct ObjectsPoolTests {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
-            let existingCounter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let existingCounter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let existingCounterSubscriber = Subscriber<DefaultLiveCounterUpdate, SubscribeResponse>(callbackQueue: .main)
             try existingCounter.subscribe(listener: existingCounterSubscriber.createListener(), coreSDK: coreSDK)
             var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock(), testsOnly_otherEntries: ["counter:hash@123": .counter(existingCounter)])
@@ -251,9 +251,9 @@ struct ObjectsPoolTests {
         func removesObjectsNotInSync() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let existingMap1 = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
-            let existingMap2 = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
-            let existingCounter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let existingMap1 = InternalDefaultLiveMap.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let existingMap2 = InternalDefaultLiveMap.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let existingCounter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
 
             var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock(), testsOnly_otherEntries: [
                 "map:hash@1": .map(existingMap1),
@@ -281,7 +281,7 @@ struct ObjectsPoolTests {
         func doesNotRemoveRootObject() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let existingMap = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let existingMap = InternalDefaultLiveMap.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             var pool = ObjectsPool(logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock(), testsOnly_otherEntries: ["map:hash@1": .map(existingMap)])
 
             // Sync with empty list (no objects)
@@ -304,9 +304,9 @@ struct ObjectsPoolTests {
             let delegate = MockLiveMapObjectsPoolDelegate(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
-            let existingMap = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
-            let existingCounter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
-            let toBeRemovedMap = InternalDefaultLiveMap.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let existingMap = InternalDefaultLiveMap.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let existingCounter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let toBeRemovedMap = InternalDefaultLiveMap.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
 
             let existingMapSubscriber = Subscriber<DefaultLiveMapUpdate, SubscribeResponse>(callbackQueue: .main)
             try existingMap.subscribe(listener: existingMapSubscriber.createListener(), coreSDK: coreSDK)
