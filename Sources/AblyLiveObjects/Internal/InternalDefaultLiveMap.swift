@@ -17,7 +17,7 @@ internal final class InternalDefaultLiveMap: Sendable {
         }
     }
 
-    internal var testsOnly_semantics: WireEnum<ObjectsMapSemantics>? {
+    internal var testsOnly_semantics: WireEnum<ProtocolTypes.ObjectsMapSemantics>? {
         mutableStateMutex.withSync { mutableState in
             mutableState.semantics
         }
@@ -50,7 +50,7 @@ internal final class InternalDefaultLiveMap: Sendable {
     internal convenience init(
         testsOnly_data data: [String: InternalObjectsMapEntry],
         objectID: String,
-        testsOnly_semantics semantics: WireEnum<ObjectsMapSemantics>? = nil,
+        testsOnly_semantics semantics: WireEnum<ProtocolTypes.ObjectsMapSemantics>? = nil,
         logger: Logger,
         internalQueue: DispatchQueue,
         userCallbackQueue: DispatchQueue,
@@ -70,7 +70,7 @@ internal final class InternalDefaultLiveMap: Sendable {
     private init(
         data: [String: InternalObjectsMapEntry],
         objectID: String,
-        semantics: WireEnum<ObjectsMapSemantics>?,
+        semantics: WireEnum<ProtocolTypes.ObjectsMapSemantics>?,
         logger: Logger,
         internalQueue: DispatchQueue,
         userCallbackQueue: DispatchQueue,
@@ -92,7 +92,7 @@ internal final class InternalDefaultLiveMap: Sendable {
     ///   - semantics: The value to use for the "private `semantics` field" of RTO5c1b1b.
     internal static func createZeroValued(
         objectID: String,
-        semantics: WireEnum<ObjectsMapSemantics>? = nil,
+        semantics: WireEnum<ProtocolTypes.ObjectsMapSemantics>? = nil,
         logger: Logger,
         internalQueue: DispatchQueue,
         userCallbackQueue: DispatchQueue,
@@ -172,7 +172,7 @@ internal final class InternalDefaultLiveMap: Sendable {
                     // RTLM20c
                     try coreSDK.nosync_validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "LiveMap.set")
 
-                    let objectMessage = OutboundObjectMessage(
+                    let objectMessage = ProtocolTypes.OutboundObjectMessage(
                         operation: .init(
                             // RTLM20e2
                             action: .known(.mapSet),
@@ -205,7 +205,7 @@ internal final class InternalDefaultLiveMap: Sendable {
                     // RTLM21c
                     try coreSDK.nosync_validateChannelState(notIn: [.detached, .failed, .suspended], operationDescription: "LiveMap.remove")
 
-                    let objectMessage = OutboundObjectMessage(
+                    let objectMessage = ProtocolTypes.OutboundObjectMessage(
                         operation: .init(
                             // RTLM21e2
                             action: .known(.mapRemove),
@@ -292,7 +292,7 @@ internal final class InternalDefaultLiveMap: Sendable {
     ///   - objectsPool: The pool into which should be inserted any objects created by a `MAP_SET` operation.
     ///   - objectMessageSerialTimestamp: The `serialTimestamp` of the containing `ObjectMessage`. Used if we need to tombstone this map.
     internal func nosync_replaceData(
-        using state: ObjectState,
+        using state: ProtocolTypes.ObjectState,
         objectMessageSerialTimestamp: Date?,
         objectsPool: inout ObjectsPool,
     ) -> LiveObjectUpdate<DefaultLiveMapUpdate> {
@@ -310,7 +310,7 @@ internal final class InternalDefaultLiveMap: Sendable {
     }
 
     /// Merges the initial value from an ObjectOperation into this LiveMap, per RTLM23.
-    internal func nosync_mergeInitialValue(from operation: ObjectOperation, objectsPool: inout ObjectsPool) -> LiveObjectUpdate<DefaultLiveMapUpdate> {
+    internal func nosync_mergeInitialValue(from operation: ProtocolTypes.ObjectOperation, objectsPool: inout ObjectsPool) -> LiveObjectUpdate<DefaultLiveMapUpdate> {
         mutableStateMutex.withoutSync { mutableState in
             mutableState.mergeInitialValue(
                 from: operation,
@@ -324,7 +324,7 @@ internal final class InternalDefaultLiveMap: Sendable {
     }
 
     /// Test-only method to apply a MAP_CREATE operation, per RTLM16.
-    internal func testsOnly_applyMapCreateOperation(_ operation: ObjectOperation, objectsPool: inout ObjectsPool) -> LiveObjectUpdate<DefaultLiveMapUpdate> {
+    internal func testsOnly_applyMapCreateOperation(_ operation: ProtocolTypes.ObjectOperation, objectsPool: inout ObjectsPool) -> LiveObjectUpdate<DefaultLiveMapUpdate> {
         mutableStateMutex.withSync { mutableState in
             mutableState.applyMapCreateOperation(
                 operation,
@@ -341,7 +341,7 @@ internal final class InternalDefaultLiveMap: Sendable {
     ///
     /// - Returns: `true` if the operation was applied, `false` if it was skipped (RTLM15g).
     internal func nosync_apply(
-        _ operation: ObjectOperation,
+        _ operation: ProtocolTypes.ObjectOperation,
         source: ObjectsOperationSource,
         objectMessageSerial: String?,
         objectMessageSiteCode: String?,
@@ -370,7 +370,7 @@ internal final class InternalDefaultLiveMap: Sendable {
     internal func testsOnly_applyMapSetOperation(
         key: String,
         operationTimeserial: String?,
-        operationData: ObjectData,
+        operationData: ProtocolTypes.ObjectData,
         objectsPool: inout ObjectsPool,
     ) -> LiveObjectUpdate<DefaultLiveMapUpdate> {
         mutableStateMutex.withSync { mutableState in
@@ -465,7 +465,7 @@ internal final class InternalDefaultLiveMap: Sendable {
         internal var data: [String: InternalObjectsMapEntry]
 
         /// The "private `semantics` field" of RTO5c1b1b.
-        internal var semantics: WireEnum<ObjectsMapSemantics>?
+        internal var semantics: WireEnum<ProtocolTypes.ObjectsMapSemantics>?
 
         /// RTLM25
         internal var clearTimeserial: String?
@@ -476,7 +476,7 @@ internal final class InternalDefaultLiveMap: Sendable {
         ///   - objectsPool: The pool into which should be inserted any objects created by a `MAP_SET` operation.
         ///   - objectMessageSerialTimestamp: The `serialTimestamp` of the containing `ObjectMessage`. Used if we need to tombstone this map.
         internal mutating func replaceData(
-            using state: ObjectState,
+            using state: ProtocolTypes.ObjectState,
             objectMessageSerialTimestamp: Date?,
             objectsPool: inout ObjectsPool,
             logger: Logger,
@@ -556,7 +556,7 @@ internal final class InternalDefaultLiveMap: Sendable {
 
         /// Merges the initial value from an ObjectOperation into this LiveMap, per RTLM23.
         internal mutating func mergeInitialValue(
-            from operation: ObjectOperation,
+            from operation: ProtocolTypes.ObjectOperation,
             objectsPool: inout ObjectsPool,
             logger: Logger,
             internalQueue: DispatchQueue,
@@ -623,7 +623,7 @@ internal final class InternalDefaultLiveMap: Sendable {
         ///
         /// - Returns: `true` if the operation was applied, `false` if skipped (RTLM15g).
         internal mutating func apply(
-            _ operation: ObjectOperation,
+            _ operation: ProtocolTypes.ObjectOperation,
             source: ObjectsOperationSource,
             objectMessageSerial: String?,
             objectMessageSiteCode: String?,
@@ -743,7 +743,7 @@ internal final class InternalDefaultLiveMap: Sendable {
         internal mutating func applyMapSetOperation(
             key: String,
             operationTimeserial: String?,
-            operationData: ObjectData?,
+            operationData: ProtocolTypes.ObjectData?,
             objectsPool: inout ObjectsPool,
             logger: Logger,
             internalQueue: DispatchQueue,
@@ -883,7 +883,7 @@ internal final class InternalDefaultLiveMap: Sendable {
 
         /// Applies a `MAP_CREATE` operation, per RTLM16.
         internal mutating func applyMapCreateOperation(
-            _ operation: ObjectOperation,
+            _ operation: ProtocolTypes.ObjectOperation,
             objectsPool: inout ObjectsPool,
             logger: Logger,
             internalQueue: DispatchQueue,

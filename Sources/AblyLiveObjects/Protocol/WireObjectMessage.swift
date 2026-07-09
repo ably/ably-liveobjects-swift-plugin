@@ -143,24 +143,26 @@ extension OutboundWireObjectMessage: WireObjectEncodable {
     }
 }
 
-// OOP2
-internal enum ObjectOperationAction: Int {
-    case mapCreate = 0
-    case mapSet = 1
-    case mapRemove = 2
-    case counterCreate = 3
-    case counterInc = 4
-    case objectDelete = 5
-    case mapClear = 6
-}
+internal extension ProtocolTypes {
+    // OOP2
+    enum ObjectOperationAction: Int {
+        case mapCreate = 0
+        case mapSet = 1
+        case mapRemove = 2
+        case counterCreate = 3
+        case counterInc = 4
+        case objectDelete = 5
+        case mapClear = 6
+    }
 
-// OMP2
-internal enum ObjectsMapSemantics: Int {
-    case lww = 0
+    // OMP2
+    enum ObjectsMapSemantics: Int {
+        case lww = 0
+    }
 }
 
 internal struct WireObjectOperation {
-    internal var action: WireEnum<ObjectOperationAction> // OOP3a
+    internal var action: WireEnum<ProtocolTypes.ObjectOperationAction> // OOP3a
     internal var objectId: String // OOP3b
     internal var mapCreate: WireMapCreate? // OOP3j
     internal var mapSet: WireMapSet? // OOP3k
@@ -297,7 +299,7 @@ extension WireObjectState: WireObjectCodable {
 }
 
 internal struct WireObjectsMap {
-    internal var semantics: WireEnum<ObjectsMapSemantics> // OMP3a
+    internal var semantics: WireEnum<ProtocolTypes.ObjectsMapSemantics> // OMP3a
     internal var entries: [String: WireObjectsMapEntry]? // OMP3b
     internal var clearTimeserial: String? // OMP3c
 }
@@ -408,7 +410,7 @@ extension WireMapRemove: WireObjectCodable {
 }
 
 internal struct WireMapCreate {
-    internal var semantics: WireEnum<ObjectsMapSemantics> // MCR2a
+    internal var semantics: WireEnum<ProtocolTypes.ObjectsMapSemantics> // MCR2a
     internal var entries: [String: WireObjectsMapEntry]? // MCR2b
 }
 
