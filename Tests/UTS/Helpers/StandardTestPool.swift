@@ -116,6 +116,14 @@ enum StandardTestPool {
         }
     }
 
+    /// Builds an `InternalLiveMap`'s data (`[String: InternalObjectsMapEntry]`) from key -> data, all
+    /// seeded with ``poolSerial`` and not tombstoned. For seeding via `InternalDefaultLiveMap.testsOnly_setData`.
+    static func internalMapEntries(_ entries: [String: ProtocolTypes.ObjectData]) -> [String: InternalObjectsMapEntry] {
+        entries.mapValues { data in
+            InternalObjectsMapEntry(tombstonedAt: nil, timeserial: poolSerial, data: data)
+        }
+    }
+
     /// Builds an ``ProtocolTypes/ObjectsMap`` — the `{ semantics, entries }` object of the spec's
     /// `build_object_state`. `clearTimeserial` is omitted unless the spec shows one.
     static func objectsMap(

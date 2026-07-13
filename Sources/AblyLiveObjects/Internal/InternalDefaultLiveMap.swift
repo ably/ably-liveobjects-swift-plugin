@@ -17,6 +17,13 @@ internal final class InternalDefaultLiveMap: Sendable {
         }
     }
 
+    /// Test-only: sets the map's data directly, mirroring the spec's `pool["id"].data = …`.
+    internal func testsOnly_setData(_ data: [String: InternalObjectsMapEntry]) {
+        mutableStateMutex.withSync { mutableState in
+            mutableState.data = data
+        }
+    }
+
     internal var testsOnly_semantics: WireEnum<ProtocolTypes.ObjectsMapSemantics>? {
         mutableStateMutex.withSync { mutableState in
             mutableState.semantics

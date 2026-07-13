@@ -214,6 +214,16 @@ internal struct ObjectsPool {
         }
     }
 
+    /// Test-only: seeds `map` into the pool under `objectID`, mirroring the spec's `pool[id] = obj`.
+    internal mutating func testsOnly_setLiveMap(_ map: InternalDefaultLiveMap, forObjectID objectID: String) {
+        entries[objectID] = .map(map)
+    }
+
+    /// Test-only: seeds `counter` into the pool under `objectID`, mirroring the spec's `pool[id] = obj`.
+    internal mutating func testsOnly_setLiveCounter(_ counter: InternalDefaultLiveCounter, forObjectID objectID: String) {
+        entries[objectID] = .counter(counter)
+    }
+
     // MARK: - Data manipulation
 
     /// Creates a zero-value object if it does not exist in the pool, per RTO6. This is used when applying a `MAP_SET` operation that contains a reference to another object.

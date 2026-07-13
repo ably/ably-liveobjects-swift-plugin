@@ -31,6 +31,30 @@ construction only, with an inline `// DEVIATION` note. (Same resolution as ably-
 | `RTINS10` | `Instance.compact()` recursive compaction | only `compactJson()` is exposed publicly; asserted on the JSON form | `InstanceTests.test_RTINS10_compact_recursively_compacts` |
 | `RTINS4d` / `RTINS9c` | `value()`/`size()` return null for the wrong wrapped type | Swift exposes `value`/`size` only on the relevant payload; "returns null" is represented as "not that payload type" | `InstanceTests.test_RTINS4_*` / `test_RTINS9_*` |
 | `RTO15` | `channel.object.publish([...])` sends an `OBJECT` PM and returns a `PublishResult` | `publish` / `PublishResult` are internal RealtimeObject members, not on the public `RealtimeObject` protocol (which exposes only `get()` / `on(...)`); the publish path is covered indirectly via the path-object mutation tests (RTO20) | `RealtimeObjectTests.test_RTO15_publish_sends_object_protocol_message` (empty, documented) |
+| `RTLO4b4c1` | noop `COUNTER_INC` (a `counterInc` with no `number`) must not trigger the listener | `WireCounterInc.number` is a non-optional `NSNumber`, so an empty `counterInc: {}` isn't constructible; the test asserts two real increments produce exactly two updates | `LiveObjectSubscribeTests.test_RTLO4b4c1_noop_update_does_not_trigger_listener` |
+| `RTO4b2a` | the reset LiveMapUpdate for root must have `objectMessage == null` | the internal `DefaultLiveMapUpdate` carries no `objectMessage` field, so this cannot be asserted; the removed-entry update itself is asserted instead | `ObjectsPoolTests.test_RTO4b_attached_without_has_objects_clears_pool_and_syncs` |
+| `RTO7`/`RTO8a` | an OBJECT message received while INITIALIZED is buffered | this SDK only buffers while SYNCING (it relies on the invariant that OBJECT messages only arrive after ATTACHED → SYNCING); in INITIALIZED it applies immediately. The test asserts the SDK's actual behaviour (object created, nothing buffered) | `ObjectsPoolTests.test_RTO7_RTO8_object_message_in_initialized_state` |
+| `RTO9a2b` | an unsupported-action OBJECT message is discarded and no object is created (pool keeps only root) | this SDK creates the zero-value object (RTO9a2a2) *before* the action check (RTO9a2b), so the object exists but the operation is not applied. The test asserts the operation had no effect (counter stays zero-valued) rather than the pool size | `ObjectsPoolTests.test_RTO9a2b_unsupported_action_is_discarded` |
+
+## Skeleton API added to host these tests
+
+Two files exercised functionality that had **no symbol at all** in this branch (not even a trapping
+skeleton). Rather than defer them, the API shapes were added as `notImplemented()` skeletons (like
+the rest of the path-based target), so the tests bind to real symbols, compile, and trap at runtime
+until the behaviour is implemented:
+
+- **`parent_references.md`** (`RTLO3f` / `RTLO4f` / `RTLO4g` / `RTLO4h`, `RTO5c10`): added the
+  ``ParentReferencing`` protocol (`parentReferences`, `addParentReference`, `removeParentReference`,
+  `getFullPaths`) with `notImplemented()` defaults, conformed by `InternalDefaultLiveCounter` /
+  `InternalDefaultLiveMap`. → `ParentReferencesTests`.
+- **`public_object_message.md`** (`PAOM3` / `PAOOP3`): added `ObjectMessage.fromObjectMessage(_:channelName:)`
+  and `ObjectOperation.fromObjectOperation(_:)` as `notImplemented()` skeletons (the spec's
+  `PublicObjectMessage` / `PublicObjectOperation` map to the SDK's `ObjectMessage` / `ObjectOperation`;
+  the `channel` object is represented by its name). → `PublicObjectMessageTests`.
+
+A minimal `testsOnly_objectsSyncState` accessor and an `ObjectsPool.testsOnly_setEntry(_:forObjectID:)`
+seed helper were also added to `Sources` to let the internal-engine tests assert sync state and
+pre-seed the pool.
 
 ## Mock Infrastructure Limitations
 

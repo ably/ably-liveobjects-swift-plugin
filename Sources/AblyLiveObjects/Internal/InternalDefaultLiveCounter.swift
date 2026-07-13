@@ -95,6 +95,13 @@ internal final class InternalDefaultLiveCounter: Sendable {
         }
     }
 
+    /// Test-only: sets the counter's data directly, mirroring the spec's `pool["id"].data = …`.
+    internal func testsOnly_setData(_ data: Double) {
+        mutableStateMutex.withSync { mutableState in
+            mutableState.data = data
+        }
+    }
+
     // MARK: - Internal methods that back LiveCounter conformance
 
     internal func value(coreSDK: CoreSDK) throws(ARTErrorInfo) -> Double {

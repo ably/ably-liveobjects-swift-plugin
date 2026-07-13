@@ -30,6 +30,14 @@ class UTSTestCase {
     private var installedMockHTTPClient: MockHTTPClient?
     private var clients: [ARTRealtime] = []
 
+    /// Shared serial queues for the tests that drive `ObjectsPool` /
+    /// `InternalDefaultRealtimeObjects` / the live-object classes directly (see `UTSTestCase+LiveObjects`).
+    /// Lazily created, so they exist only for the tests that actually use those helpers. Every
+    /// object a test builds via those helpers shares ``objectsInternalQueue`` (so they can be mixed in
+    /// one pool); ``flushCallbacks()`` drains subscription deliveries on ``objectsUserCallbackQueue``.
+    lazy var objectsInternalQueue = DispatchQueue(label: "uts.objects.internal.\(UUID().uuidString)", qos: .userInitiated)
+    lazy var objectsUserCallbackQueue = DispatchQueue(label: "uts.objects.user.\(UUID().uuidString)")
+
     // MARK: Enable fake timers
 
     /// UTS `enable_fake_timers()`. Clients built *after* this call use the deterministic
