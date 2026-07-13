@@ -115,6 +115,47 @@ extension UTSTestCase {
     func sendToClient(_ ws: MockWebSocketProvider, channel: String = "test", _ state: [ProtocolTypes.InboundObjectMessage]) {
         ws.activeConnection?.sendToClient(.object(channel: channel, state: state))
     }
+
+    // MARK: - Direct internal live-object helpers
+
+    // Factories for the tests that drive `ObjectsPool` / `InternalDefaultRealtimeObjects` / the
+    // live-object classes directly, without the mock WebSocket. Every object is bound to the test's
+    // shared ``objectsInternalQueue`` so they can be mixed in one pool, and the `nosync_*` handlers are
+    // invoked on that queue via ``onQueue(_:)``. ``flushCallbacks()`` drains subscription deliveries
+    // on ``objectsUserCallbackQueue``.
+
+    private var objectsLogger: AblyLiveObjects.Logger { UTSNoOpLogger() }
+    private var objectsClock: SimpleClock { DefaultSimpleClock() }
+
+    func makeRealtimeObjects() -> InternalDefaultRealtimeObjects {
+        InternalDefaultRealtimeObjects(logger: objectsLogger, internalQueue: objectsInternalQueue, userCallbackQueue: objectsUserCallbackQueue, clock: objectsClock)
+    }
+
+    func makePool(otherEntries: [String: ObjectsPool.Entry]? = nil) -> ObjectsPool {
+        ObjectsPool(logger: objectsLogger, internalQueue: objectsInternalQueue, userCallbackQueue: objectsUserCallbackQueue, clock: objectsClock, testsOnly_otherEntries: otherEntries)
+    }
+
+    func makeCounter(objectID: String) -> InternalDefaultLiveCounter {
+        .createZeroValued(objectID: objectID, logger: objectsLogger, internalQueue: objectsInternalQueue, userCallbackQueue: objectsUserCallbackQueue, clock: objectsClock)
+    }
+
+    func makeMap(objectID: String) -> InternalDefaultLiveMap {
+        .createZeroValued(objectID: objectID, logger: objectsLogger, internalQueue: objectsInternalQueue, userCallbackQueue: objectsUserCallbackQueue, clock: objectsClock)
+    }
+
+    func makeCoreSDK(publishHandler: @escaping @Sendable ([ProtocolTypes.OutboundObjectMessage]) -> PublishResult = { _ in PublishResult(serials: []) }) -> UTSMockCoreSDK {
+        UTSMockCoreSDK(internalQueue: objectsInternalQueue, publishHandler: publishHandler)
+    }
+
+    /// Runs `body` on the internal queue (the `nosync_*` handlers require this).
+    func onQueue<T>(_ body: () throws -> T) rethrows -> T {
+        try objectsInternalQueue.ably_syncNoDeadlock(execute: body)
+    }
+
+    /// Drains any pending user-callback-queue work (subscription deliveries) synchronously.
+    func flushCallbacks() {
+        objectsUserCallbackQueue.sync {}
+    }
 }
 
 /// Wire-level `ProtocolMessage.action` codes (`ARTProtocolMessageAction`).

@@ -73,6 +73,13 @@ internal final class InternalDefaultRealtimeObjects: Sendable, InternalRealtimeO
         }
     }
 
+    /// The current object sync state (RTO4/RTO5 state machine): `.initialized`, `.syncing`, or `.synced`.
+    internal var testsOnly_objectsSyncState: ObjectsSyncState {
+        mutableStateMutex.withSync { mutableState in
+            mutableState.state.toObjectsSyncState
+        }
+    }
+
     /// If this returns false, it means that there is currently no stored sync sequence ID, SyncObjectsPool, or BufferedObjectOperations.
     internal var testsOnly_hasSyncSequence: Bool {
         mutableStateMutex.withSync { mutableState in
@@ -436,6 +443,28 @@ internal final class InternalDefaultRealtimeObjects: Sendable, InternalRealtimeO
                 userCallbackQueue: userCallbackQueue,
                 clock: clock,
             )
+        }
+    }
+
+    /// Seeds a pre-built `InternalLiveMap` into the object pool, keyed by its own objectId.
+    ///
+    /// Intended as a way for tests to populate the object pool (like `testsOnly_createZeroValueLiveObject`,
+    /// but with an already-configured object).
+    internal func testsOnly_setLiveMap(_ map: InternalDefaultLiveMap) {
+        let objectID = map.testsOnly_objectID
+        mutableStateMutex.withSync { mutableState in
+            mutableState.objectsPool.testsOnly_setLiveMap(map, forObjectID: objectID)
+        }
+    }
+
+    /// Seeds a pre-built `InternalLiveCounter` into the object pool, keyed by its own objectId.
+    ///
+    /// Intended as a way for tests to populate the object pool (like `testsOnly_createZeroValueLiveObject`,
+    /// but with an already-configured object).
+    internal func testsOnly_setLiveCounter(_ counter: InternalDefaultLiveCounter) {
+        let objectID = counter.testsOnly_objectID
+        mutableStateMutex.withSync { mutableState in
+            mutableState.objectsPool.testsOnly_setLiveCounter(counter, forObjectID: objectID)
         }
     }
 
