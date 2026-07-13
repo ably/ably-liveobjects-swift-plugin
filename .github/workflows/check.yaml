@@ -112,7 +112,11 @@ jobs:
 
       # https://forums.swift.org/t/warnings-as-errors-for-libraries-frameworks/58393/2
       - run: swift build -Xswiftc -warnings-as-errors
-      - run: swift test -Xswiftc -warnings-as-errors
+      # The `UTS` target's tests are translations of the LiveObjects Universal Test Suite against an
+      # as-yet-unimplemented (skeleton) public API, so many trap via `notImplemented()` at runtime. A
+      # trap is a `fatalError`, which aborts the whole `swift test` process, so we skip the UTS target
+      # here (it's still built above); it'll be run once the API it targets is implemented.
+      - run: swift test --skip 'UTS\.' -Xswiftc -warnings-as-errors
 
   build-release-configuration-spm:
     name: SPM, `release` configuration (Xcode ${{ matrix.tooling.xcodeVersion }})
