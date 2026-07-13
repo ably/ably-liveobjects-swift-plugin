@@ -20,7 +20,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/ably/ably-cocoa.git",
-            from: "1.2.59",
+            from: "1.2.62",
         ),
         .package(
             url: "https://github.com/ably/ably-cocoa-plugin-support",
@@ -75,6 +75,24 @@ let package = Package(
             ],
             resources: [
                 .copy("ably-common"),
+            ],
+        ),
+        .testTarget(
+            name: "UTS",
+            dependencies: [
+                "AblyLiveObjects",
+                .product(
+                    name: "Ably",
+                    package: "ably-cocoa",
+                ),
+                .product(
+                    name: "_AblyPluginSupportPrivate",
+                    package: "ably-cocoa-plugin-support",
+                ),
+            ],
+            path: "Tests/UTS",
+            exclude: [
+                "deviations.md",
             ],
         ),
         .executableTarget(

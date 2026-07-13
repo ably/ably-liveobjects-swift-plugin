@@ -60,6 +60,16 @@ public struct ObjectMessage: Sendable, Equatable {
         self.siteCode = siteCode
         self.extras = extras
     }
+
+    /// Builds the user-facing `ObjectMessage` from an internal (protocol) object message, taking the
+    /// channel name from `channelName` (not from the source message). The operation is derived per
+    /// `PAOOP3`. Spec: `PAOM3`.
+    ///
+    /// > Note: Not yet implemented in this target — traps via ``notImplemented()``.
+    internal static func fromInternalObjectMessage(_ source: ProtocolTypes.InboundObjectMessage, channelName: String) -> ObjectMessage {
+        _ = (source, channelName)
+        notImplemented()
+    }
 }
 
 // MARK: - ObjectOperation (PAOOP)
@@ -110,6 +120,16 @@ public struct ObjectOperation: Sendable, Equatable {
         self.counterInc = counterInc
         self.objectDelete = objectDelete
         self.mapClear = mapClear
+    }
+
+    /// Builds the user-facing `ObjectOperation` from an internal (protocol) object operation. The
+    /// direct payloads are copied; `mapCreate` / `counterCreate` are resolved from either the direct
+    /// field or the `*WithObjectId` variant's retained `derivedFrom` value. Spec: `PAOOP3`.
+    ///
+    /// > Note: Not yet implemented in this target — traps via ``notImplemented()``.
+    internal static func fromInternalObjectOperation(_ source: ProtocolTypes.ObjectOperation) -> ObjectOperation {
+        _ = source
+        notImplemented()
     }
 }
 
