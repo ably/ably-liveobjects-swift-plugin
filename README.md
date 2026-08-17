@@ -10,7 +10,11 @@ The Ably LiveObjects plugin enables real-time collaborative data synchronization
 
 > [!WARNING]
 >
-> **This package is deprecated and no longer under development.** The Ably LiveObjects plugin is now developed, versioned and released as part of the [ably-cocoa](https://github.com/ably/ably-cocoa) repository, as the `AblyLiveObjects` product of the ably-cocoa package (from ably-cocoa 1.3.0 onwards). No further releases will be published from this repository. Prefer the LiveObjects plugin from the ably-cocoa repository for all new versions: to move to it — including the package swap, the path-based API changes, and the package-resolution errors you may see along the way — follow the [migration guide](https://github.com/ably/ably-cocoa/blob/main/LiveObjects/README.md#migrating-from-the-standalone-plugin-package).
+> **This package is deprecated.**
+>
+> From [ably-cocoa 1.3.0](https://github.com/ably/ably-cocoa/releases/tag/1.3.0), the LiveObjects plugin is developed and released as the `AblyLiveObjects` product of the [ably-cocoa](https://github.com/ably/ably-cocoa) package. No further releases will be published from this repository.
+>
+> For installation and migration, see the [LiveObjects section of the ably-cocoa README](https://github.com/ably/ably-cocoa#liveobjects).
 
 ---
 
@@ -61,7 +65,7 @@ To run the app:
 
 ## Releases
 
-This repository's final release line is 0.4.x; the [CHANGELOG.md](./CHANGELOG.md) records its historical releases. The plugin is now released as part of ably-cocoa — see the [ably-cocoa CHANGELOG](https://github.com/ably/ably-cocoa/blob/main/CHANGELOG.md). You can also view all Ably releases on [changelog.ably.com](https://changelog.ably.com).
+New versions of the plugin now ship with [ably-cocoa](https://github.com/ably/ably-cocoa). This repository's final release is 0.4.0, and its [CHANGELOG.md](./CHANGELOG.md) records the historical standalone releases. Every Ably release is also listed on [changelog.ably.com](https://changelog.ably.com).
 
 ---
 
@@ -71,4 +75,4 @@ Read the [CONTRIBUTING.md](./CONTRIBUTING.md) guidelines to contribute to Ably o
 
 ## Support, feedback and troubleshooting
 
-For help or technical support, visit Ably's [support page](https://ably.com/support). You can also view the [community-reported GitHub issues](https://github.com/ably/ably-cocoa/issues) or raise one yourself in the [ably-cocoa repository](https://github.com/ably/ably-cocoa/issues), where the plugin is now developed.
+For help or technical support, visit Ably's [support page](https://ably.com/support). You can also view the [community-reported GitHub issues](https://github.com/ably/ably-cocoa/issues) or raise one yourself.
