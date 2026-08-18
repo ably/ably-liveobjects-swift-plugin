@@ -65,7 +65,7 @@ To run the app:
 
 ## Releases
 
-New versions of the plugin now ship with [ably-cocoa](https://github.com/ably/ably-cocoa). This repository's final release is 0.4.0, and its [CHANGELOG.md](./CHANGELOG.md) records the historical standalone releases. Every Ably release is also listed on [changelog.ably.com](https://changelog.ably.com).
+New versions of the plugin now ship with [ably-cocoa](https://github.com/ably/ably-cocoa). This repository's final release is 0.4.1, and its [CHANGELOG.md](./CHANGELOG.md) records the historical standalone releases. Every Ably release is also listed on [changelog.ably.com](https://changelog.ably.com).
 
 ---
 
