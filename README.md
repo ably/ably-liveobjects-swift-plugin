@@ -9,7 +9,12 @@
 The Ably LiveObjects plugin enables real-time collaborative data synchronization for the [ably-cocoa](https://github.com/ably/ably-cocoa/) SDK. LiveObjects provides a simple way to build collaborative applications with synchronized state across multiple clients in real-time. Built on [Ably's](https://ably.com/) core service, it abstracts complex details to enable efficient collaborative architectures.
 
 > [!WARNING]
-> This plugin is currently experimental and the public API may change.
+>
+> **This package is deprecated.**
+>
+> From [ably-cocoa 1.3.0](https://github.com/ably/ably-cocoa/releases/tag/1.3.0), the LiveObjects plugin is developed and released as the `AblyLiveObjects` product of the [ably-cocoa](https://github.com/ably/ably-cocoa) package. No further releases will be published from this repository.
+>
+> For installation and migration, see the [LiveObjects section of the ably-cocoa README](https://github.com/ably/ably-cocoa#liveobjects).
 
 ---
 
@@ -60,7 +65,7 @@ To run the app:
 
 ## Releases
 
-The [CHANGELOG.md](./CHANGELOG.md) contains details of the latest releases for this plugin. You can also view all Ably releases on [changelog.ably.com](https://changelog.ably.com).
+New versions of the plugin now ship with [ably-cocoa](https://github.com/ably/ably-cocoa). This repository's final release is 0.4.1, and its [CHANGELOG.md](./CHANGELOG.md) records the historical standalone releases. Every Ably release is also listed on [changelog.ably.com](https://changelog.ably.com).
 
 ---
 
@@ -70,4 +75,4 @@ Read the [CONTRIBUTING.md](./CONTRIBUTING.md) guidelines to contribute to Ably o
 
 ## Support, feedback and troubleshooting
 
-For help or technical support, visit Ably's [support page](https://ably.com/support). You can also view the [community reported GitHub issues](https://github.com/ably/ably-liveobjects-swift-plugin/issues) or raise one yourself.
+For help or technical support, visit Ably's [support page](https://ably.com/support). You can also view the [community-reported GitHub issues](https://github.com/ably/ably-cocoa/issues) or raise one yourself.
