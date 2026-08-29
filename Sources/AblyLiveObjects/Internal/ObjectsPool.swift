@@ -161,7 +161,7 @@ internal struct ObjectsPool {
 
     // MARK: - Initialization
 
-    /// Creates an `ObjectsPool` whose root is a zero-value `LiveMap`.
+    /// Creates an `ObjectsPool` whose root is a new empty `LiveMap`.
     internal init(
         logger: Logger,
         internalQueue: DispatchQueue,
@@ -188,7 +188,7 @@ internal struct ObjectsPool {
         entries = otherEntries ?? [:]
         // TODO: What initial root entry to use? https://github.com/ably/specification/pull/333/files#r2152312933
         entries[Self.rootKey] = .map(
-            .createZeroValued(
+            .createEmpty(
                 objectID: Self.rootKey,
                 logger: logger,
                 internalQueue: internalQueue,
@@ -216,7 +216,7 @@ internal struct ObjectsPool {
 
     // MARK: - Data manipulation
 
-    /// Creates a zero-value object if it does not exist in the pool, per RTO6. This is used when applying a `MAP_SET` operation that contains a reference to another object.
+    /// Creates a new empty object if it does not exist in the pool, per RTO6. This is used when applying a `MAP_SET` operation that contains a reference to another object.
     ///
     /// - Parameters:
     ///   - objectID: The ID of the object to create
@@ -224,7 +224,7 @@ internal struct ObjectsPool {
     ///   - userCallbackQueue: The callback queue to use for any created LiveObject
     ///   - clock: The clock to use for any created LiveObject
     /// - Returns: The existing or newly created object
-    internal mutating func createZeroValueObject(
+    internal mutating func createEmptyObject(
         forObjectID objectID: String,
         logger: Logger,
         internalQueue: DispatchQueue,
@@ -243,13 +243,13 @@ internal struct ObjectsPool {
             return nil
         }
 
-        // RTO6b2: If the parsed type is map, create a zero-value LiveMap per RTLM4 in the ObjectsPool
-        // RTO6b3: If the parsed type is counter, create a zero-value LiveCounter per RTLC4 in the ObjectsPool
+        // RTO6b2: If the parsed type is map, create a new LiveMap per RTLM4 by passing in the objectId, and add it to the ObjectsPool
+        // RTO6b3: If the parsed type is counter, create a new LiveCounter per RTLC4 by passing in the objectId, and add it to the ObjectsPool
         let entry: Entry
         switch typeString {
         case "map":
             entry = .map(
-                .createZeroValued(
+                .createEmpty(
                     objectID: objectID,
                     logger: logger,
                     internalQueue: internalQueue,
@@ -259,7 +259,7 @@ internal struct ObjectsPool {
             )
         case "counter":
             entry = .counter(
-                .createZeroValued(
+                .createEmpty(
                     objectID: objectID,
                     logger: logger,
                     internalQueue: internalQueue,
@@ -365,9 +365,9 @@ internal struct ObjectsPool {
         let newEntry: Entry
 
         if state.counter != nil {
-            // RTO5c1b1a: If ObjectState.counter is present, create a zero-value LiveCounter,
-            // set its private objectId equal to ObjectState.objectId and override its internal data per RTLC6
-            let counter = InternalDefaultLiveCounter.createZeroValued(
+            // RTO5c1b1a: If ObjectState.counter is present, create a new LiveCounter per RTLC4 by
+            // passing in ObjectState.objectId as objectId, and override its internal data per RTLC6
+            let counter = InternalDefaultLiveCounter.createEmpty(
                 objectID: state.objectId,
                 logger: logger,
                 internalQueue: internalQueue,
@@ -380,10 +380,10 @@ internal struct ObjectsPool {
             )
             newEntry = .counter(counter)
         } else if let objectsMap = state.map {
-            // RTO5c1b1b: If ObjectState.map is present, create a zero-value LiveMap,
-            // set its private objectId equal to ObjectState.objectId, set its private semantics
-            // equal to ObjectState.map.semantics and override its internal data per RTLM6
-            let map = InternalDefaultLiveMap.createZeroValued(
+            // RTO5c1b1b: If ObjectState.map is present, create a new LiveMap per RTLM4 by passing in
+            // ObjectState.objectId as objectId, ObjectState.map.semantics as semantics, and override
+            // its internal data per RTLM6
+            let map = InternalDefaultLiveMap.createEmpty(
                 objectID: state.objectId,
                 semantics: objectsMap.semantics,
                 logger: logger,

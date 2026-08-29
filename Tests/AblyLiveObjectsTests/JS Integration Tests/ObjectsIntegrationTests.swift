@@ -1399,7 +1399,7 @@ private struct ObjectsIntegrationTests {
                         let internalRoot = internallyTypedRoot.proxied
                         #expect(internalRoot.testsOnly_clearTimeserial == lexicoTimeserial(seriesId: "aaa", timestamp: 10, counter: 0), "Check clearTimeserial is set after MAP_CLEAR")
 
-                        // simulate reattach with HAS_OBJECTS=false, which resets root to a zero-value
+                        // simulate reattach with HAS_OBJECTS=false, which resets root to a new empty value
                         await injectAttachedMessage(channel: channel)
 
                         // clearTimeserial should be now set to null for root
@@ -1567,7 +1567,7 @@ private struct ObjectsIntegrationTests {
                             objectsHelper.fakeMapObjectId(),
                         ]
 
-                        // Send MAP_SET ops first to create zero-value maps with forged site timeserials vector
+                        // Send MAP_SET ops first to create empty maps with forged site timeserials vector
                         for (i, mapId) in mapIds.enumerated() {
                             await objectsHelper.processObjectOperationMessageOnChannel(
                                 channel: channel,
@@ -1737,7 +1737,7 @@ private struct ObjectsIntegrationTests {
                         )
                         _ = try await objectsCreatedPromise
 
-                        // Check root has refs to new objects and they are not zero-value
+                        // Check root has refs to new objects and they are not empty
                         let counter = try #require(root.get(key: "keyToCounter")?.liveCounterValue)
                         #expect(try counter.value == 1, "Check counter at \"keyToCounter\" key in root has correct value")
 
@@ -1944,14 +1944,14 @@ private struct ObjectsIntegrationTests {
                 .init(
                     disabled: false,
                     allTransportsAndProtocols: false,
-                    description: "OBJECT_DELETE for unknown object id creates zero-value tombstoned object",
+                    description: "OBJECT_DELETE for unknown object id creates empty tombstoned object",
                     action: { ctx throws in
                         let root = ctx.root
                         let objectsHelper = ctx.objectsHelper
                         let channel = ctx.channel
 
                         let counterId = objectsHelper.fakeCounterObjectId()
-                        // Inject OBJECT_DELETE - should create a zero-value tombstoned object which can't be modified
+                        // Inject OBJECT_DELETE - should create an empty tombstoned object which can't be modified
                         await objectsHelper.processObjectOperationMessageOnChannel(
                             channel: channel,
                             serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0),
@@ -2365,7 +2365,7 @@ private struct ObjectsIntegrationTests {
                             objectsHelper.fakeCounterObjectId(),
                         ]
 
-                        // Send COUNTER_INC ops first to create zero-value counters with forged site timeserials vector
+                        // Send COUNTER_INC ops first to create empty counters with forged site timeserials vector
                         for (i, counterId) in counterIds.enumerated() {
                             await objectsHelper.processObjectOperationMessageOnChannel(
                                 channel: channel,

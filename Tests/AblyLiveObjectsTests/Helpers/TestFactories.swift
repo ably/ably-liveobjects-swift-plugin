@@ -177,7 +177,7 @@ import Foundation
 ///     objectId: String = "map:test@123",
 ///     entries: [String: String] = [:],
 /// ) -> InternalDefaultLiveMap {
-///     let map = InternalDefaultLiveMap.createZeroValued()
+///     let map = InternalDefaultLiveMap.createEmpty()
 ///     // Configure map with entries...
 ///     return map
 /// }

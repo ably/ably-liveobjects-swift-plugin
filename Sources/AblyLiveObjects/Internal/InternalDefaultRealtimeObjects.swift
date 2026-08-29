@@ -424,12 +424,12 @@ internal final class InternalDefaultRealtimeObjects: Sendable, InternalRealtimeO
         }
     }
 
-    /// Creates a zero-value LiveObject in the object pool for this object ID.
+    /// Creates a new empty LiveObject in the object pool for this object ID.
     ///
     /// Intended as a way for tests to populate the object pool.
-    internal func testsOnly_createZeroValueLiveObject(forObjectID objectID: String) -> ObjectsPool.Entry? {
+    internal func testsOnly_createEmptyLiveObject(forObjectID objectID: String) -> ObjectsPool.Entry? {
         mutableStateMutex.withSync { mutableState in
-            mutableState.objectsPool.createZeroValueObject(
+            mutableState.objectsPool.createEmptyObject(
                 forObjectID: objectID,
                 logger: logger,
                 internalQueue: mutableStateMutex.dispatchQueue,
@@ -940,14 +940,14 @@ internal final class InternalDefaultRealtimeObjects: Sendable, InternalRealtimeO
             if let existingEntry = objectsPool.entries[operation.objectId] {
                 entry = existingEntry
             } else {
-                guard let newEntry = objectsPool.createZeroValueObject(
+                guard let newEntry = objectsPool.createEmptyObject(
                     forObjectID: operation.objectId,
                     logger: logger,
                     internalQueue: internalQueue,
                     userCallbackQueue: userCallbackQueue,
                     clock: clock,
                 ) else {
-                    logger.log("Unable to create zero-value object for \(operation.objectId) when processing OBJECT message; dropping", level: .warn)
+                    logger.log("Unable to create empty object for \(operation.objectId) when processing OBJECT message; dropping", level: .warn)
                     return
                 }
 

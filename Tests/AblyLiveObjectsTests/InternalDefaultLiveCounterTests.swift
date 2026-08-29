@@ -12,7 +12,7 @@ struct InternalDefaultLiveCounterTests {
         func valueThrowsIfChannelIsDetachedOrFailed(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: channelState, internalQueue: internalQueue)
 
             #expect {
@@ -31,7 +31,7 @@ struct InternalDefaultLiveCounterTests {
         func valueReturnsCurrentDataWhenChannelIsValid() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
 
             // Set some test data
@@ -50,7 +50,7 @@ struct InternalDefaultLiveCounterTests {
         func replacesSiteTimeserials() {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let state = TestFactories.counterObjectState(
                 siteTimeserials: ["site1": "ts1"], // Test value
             )
@@ -69,7 +69,7 @@ struct InternalDefaultLiveCounterTests {
                 let logger = TestLogger()
                 let internalQueue = TestFactories.createInternalQueue()
                 let counter = {
-                    let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+                    let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
                     // Test setup: Manipulate counter so that its createOperationIsMerged gets set to true (we need to do this since we want to later assert that it gets set to false, but the default is false).
                     let state = TestFactories.counterObjectState(
                         createOp: TestFactories.objectOperation(
@@ -101,7 +101,7 @@ struct InternalDefaultLiveCounterTests {
             func setsDataToCounterCount() throws {
                 let logger = TestLogger()
                 let internalQueue = TestFactories.createInternalQueue()
-                let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+                let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
                 let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
                 let state = TestFactories.counterObjectState(
                     count: 42, // Test value
@@ -117,7 +117,7 @@ struct InternalDefaultLiveCounterTests {
             func setsDataToZeroWhenCounterCountDoesNotExist() throws {
                 let logger = TestLogger()
                 let internalQueue = TestFactories.createInternalQueue()
-                let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+                let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
                 let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
                 internalQueue.ably_syncNoDeadlock {
                     _ = counter.nosync_replaceData(using: TestFactories.counterObjectState(
@@ -136,7 +136,7 @@ struct InternalDefaultLiveCounterTests {
             func mergesInitialValueWhenCreateOpPresent() throws {
                 let logger = TestLogger()
                 let internalQueue = TestFactories.createInternalQueue()
-                let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+                let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
                 let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
                 let state = TestFactories.counterObjectState(
                     createOp: TestFactories.counterCreateOperation(count: 10), // Test value - must exist
@@ -157,7 +157,7 @@ struct InternalDefaultLiveCounterTests {
             func returnsCorrectDiffWithoutCreateOp() throws {
                 let logger = TestLogger()
                 let internalQueue = TestFactories.createInternalQueue()
-                let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+                let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
                 let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
                 // Set initial data to 10
@@ -181,7 +181,7 @@ struct InternalDefaultLiveCounterTests {
             func returnsCorrectDiffWithCreateOp() throws {
                 let logger = TestLogger()
                 let internalQueue = TestFactories.createInternalQueue()
-                let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+                let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
                 let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
                 // Set initial data to 10
@@ -217,7 +217,7 @@ struct InternalDefaultLiveCounterTests {
         func addsCounterCountToData() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
             // Set initial data
@@ -245,7 +245,7 @@ struct InternalDefaultLiveCounterTests {
         func addsCounterCountToDataFromDerivedFrom() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
             // Set initial data
@@ -279,7 +279,7 @@ struct InternalDefaultLiveCounterTests {
         func doesNotModifyDataWhenCounterCountDoesNotExist() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
             // Set initial data
@@ -308,7 +308,7 @@ struct InternalDefaultLiveCounterTests {
         func setsCreateOperationIsMergedToTrue() {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
 
             // Apply merge operation
             let operation = TestFactories.counterCreateOperation(count: 10) // Test value - must exist
@@ -327,7 +327,7 @@ struct InternalDefaultLiveCounterTests {
         func discardsOperationWhenCreateOperationIsMerged() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
             // Set initial data and mark create operation as merged
@@ -354,7 +354,7 @@ struct InternalDefaultLiveCounterTests {
         func mergesInitialValue() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
             // Set initial data but don't mark create operation as merged
@@ -398,7 +398,7 @@ struct InternalDefaultLiveCounterTests {
         func addsAmountToData(operation: WireCounterInc?, expectedValue: Double, expectedUpdate: LiveObjectUpdate<DefaultLiveCounterUpdate>) throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
             // Set initial data
@@ -425,7 +425,7 @@ struct InternalDefaultLiveCounterTests {
         func discardsOperationWhenCannotBeApplied() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
             // Set up the counter with an existing site timeserial that will cause the operation to be discarded
@@ -471,7 +471,7 @@ struct InternalDefaultLiveCounterTests {
         func appliesCounterCreateOperation() async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
             let subscriber = Subscriber<DefaultLiveCounterUpdate, SubscribeResponse>(callbackQueue: .main)
@@ -513,7 +513,7 @@ struct InternalDefaultLiveCounterTests {
         func appliesCounterIncOperation() async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
             let subscriber = Subscriber<DefaultLiveCounterUpdate, SubscribeResponse>(callbackQueue: .main)
@@ -559,7 +559,7 @@ struct InternalDefaultLiveCounterTests {
         func doesNotUpdateSiteTimeserialsForLocalSource() throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
             let operation = TestFactories.objectOperation(
@@ -593,7 +593,7 @@ struct InternalDefaultLiveCounterTests {
         func noOpForOtherOperation() async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attaching, internalQueue: internalQueue)
 
             let subscriber = Subscriber<DefaultLiveCounterUpdate, SubscribeResponse>(callbackQueue: .main)
@@ -626,7 +626,7 @@ struct InternalDefaultLiveCounterTests {
         func throwsErrorForInvalidChannelState(channelState: _AblyPluginSupportPrivate.RealtimeChannelState) async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: channelState, internalQueue: internalQueue)
             let realtimeObjects = MockRealtimeObjects()
 
@@ -650,7 +650,7 @@ struct InternalDefaultLiveCounterTests {
         func throwsErrorForInvalidAmount(amount: Double) async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "arbitrary", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
             let realtimeObjects = MockRealtimeObjects()
 
@@ -673,7 +673,7 @@ struct InternalDefaultLiveCounterTests {
         func publishesCorrectObjectMessage() async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "counter:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "counter:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
             let realtimeObjects = MockRealtimeObjects()
 
@@ -704,7 +704,7 @@ struct InternalDefaultLiveCounterTests {
         func throwsErrorWhenPublishFails() async throws {
             let logger = TestLogger()
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "counter:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "counter:test@123", logger: logger, internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
             let realtimeObjects = MockRealtimeObjects()
 
@@ -730,7 +730,7 @@ struct InternalDefaultLiveCounterTests {
         func isOppositeOfIncrement() async throws {
             // This is just a smoke test; we assume that this just calls `increment`, which is tested elsewhere.
             let internalQueue = TestFactories.createInternalQueue()
-            let counter = InternalDefaultLiveCounter.createZeroValued(objectID: "counter:test@123", logger: TestLogger(), internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
+            let counter = InternalDefaultLiveCounter.createEmpty(objectID: "counter:test@123", logger: TestLogger(), internalQueue: internalQueue, userCallbackQueue: .main, clock: MockSimpleClock())
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
             let realtimeObjects = MockRealtimeObjects()
 

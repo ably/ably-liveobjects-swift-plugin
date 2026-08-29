@@ -8,8 +8,8 @@ internal protocol InternalLiveObject<Update> {
 
     var liveObjectMutableState: LiveObjectMutableState<Update> { get set }
 
-    /// Resets the LiveObject's internal data to that of a zero-value, per RTLO4e4.
-    mutating func resetDataToZeroValued()
+    /// Resets the LiveObject's data per RTLM26 or RTLC17, depending on the object type, per RTLO4e4.
+    mutating func resetDataToEmpty()
 }
 
 internal extension InternalLiveObject {
@@ -32,7 +32,7 @@ internal extension InternalLiveObject {
         }
 
         // RTLO4e4
-        resetDataToZeroValued()
+        resetDataToEmpty()
 
         // Emit the deleted lifecycle event
         // Taken from https://github.com/ably/ably-js/blob/e280bff11a4a7627362c5185e764b7ebd0490570/src/plugins/objects/liveobject.ts#L168

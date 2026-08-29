@@ -364,10 +364,10 @@ struct InternalDefaultRealtimeObjectsTests {
             let internalQueue = TestFactories.createInternalQueue()
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
 
-            // Set up initial state with additional objects by using the createZeroValueObject method
+            // Set up initial state with additional objects by using the createEmptyObject method
             let originalPool = realtimeObjects.testsOnly_objectsPool
             let originalRootObject = originalPool.root
-            _ = realtimeObjects.testsOnly_createZeroValueLiveObject(forObjectID: "map:test@123")
+            _ = realtimeObjects.testsOnly_createEmptyLiveObject(forObjectID: "map:test@123")
 
             // Set up an in-progress sync sequence
             internalQueue.ably_syncNoDeadlock {
@@ -483,7 +483,7 @@ struct InternalDefaultRealtimeObjectsTests {
             // Then: Verify the expected behavior per RTO4b
             #expect(realtimeObjects.testsOnly_onChannelAttachedHasObjects == false)
 
-            // RTO4b1, RTO4b2: All objects except root must be removed, root must be cleared to zero-value
+            // RTO4b1, RTO4b2: All objects except root must be removed, root must be cleared to empty
             let newPool = realtimeObjects.testsOnly_objectsPool
             #expect(newPool.entries.count == 1) // Only root should remain
             #expect(newPool.entries["root"] != nil)
@@ -497,8 +497,8 @@ struct InternalDefaultRealtimeObjectsTests {
             // TODO: this one is unclear (are we meant to replace the root or just clear its data?) https://github.com/ably/specification/pull/333/files#r2183493458. I believe that the answer is that we should just clear its data but the spec point needs to be clearer, see https://github.com/ably/specification/pull/346/files#r2201434895.
             let newRoot = newPool.root
             #expect(newRoot as AnyObject === originalPool.root as AnyObject) // Should be same instance
-            #expect(newRoot.testsOnly_data.isEmpty) // Should be zero-valued (empty)
-            #expect(newRoot.testsOnly_clearTimeserial == nil) // RTLM4: zero-value LiveMap has clearTimeserial set to null
+            #expect(newRoot.testsOnly_data.isEmpty) // Should be empty
+            #expect(newRoot.testsOnly_clearTimeserial == nil) // RTLM4d: new empty LiveMap has clearTimeserial set to null
 
             // RTO4b3, RTO4b4, RTO4d: SyncObjectsPool must be cleared, sync sequence cleared, BufferedObjectOperations cleared, appliedOnAckSerials cleared
             #expect(!realtimeObjects.testsOnly_hasSyncSequence)
@@ -627,7 +627,7 @@ struct InternalDefaultRealtimeObjectsTests {
 
             // Then: The new root should be properly initialized
             let newRoot = realtimeObjects.testsOnly_objectsPool.root
-            #expect(newRoot.testsOnly_data.isEmpty) // Should be zero-valued (empty)
+            #expect(newRoot.testsOnly_data.isEmpty) // Should be empty
         }
     }
 
@@ -1507,7 +1507,7 @@ struct InternalDefaultRealtimeObjectsTests {
 
                     // Create an object with this exact ID in the pool
                     // This simulates the object already existing when createMap tries to get it, before the publish operation completes (e.g. because it has been populated by receipt of an OBJECT)
-                    maybeExistingObject = realtimeObjects.testsOnly_createZeroValueLiveObject(forObjectID: objectID)?.mapValue
+                    maybeExistingObject = realtimeObjects.testsOnly_createEmptyLiveObject(forObjectID: objectID)?.mapValue
                 }
                 return PublishResult(serials: messages.map { _ in nil })
             }
@@ -1596,7 +1596,7 @@ struct InternalDefaultRealtimeObjectsTests {
 
         // @specOneOf(2/2) RTO12f12a
         @Test
-        func withNoEntriesArgumentCreatesWithZeroValue() async throws {
+        func withNoEntriesArgumentCreatesWithEmptyValue() async throws {
             let internalQueue = TestFactories.createInternalQueue()
             let realtimeObjects = InternalDefaultRealtimeObjectsTests.createDefaultRealtimeObjects(internalQueue: internalQueue)
             let coreSDK = MockCoreSDK(channelState: .attached, internalQueue: internalQueue)
@@ -1657,7 +1657,7 @@ struct InternalDefaultRealtimeObjectsTests {
 
                     // Create an object with this exact ID in the pool
                     // This simulates the object already existing when createMap tries to get it, before the publish operation completes (e.g. because it has been populated by receipt of an OBJECT)
-                    maybeExistingObject = realtimeObjects.testsOnly_createZeroValueLiveObject(forObjectID: objectID)?.counterValue
+                    maybeExistingObject = realtimeObjects.testsOnly_createEmptyLiveObject(forObjectID: objectID)?.counterValue
                 }
                 return PublishResult(serials: messages.map { _ in nil })
             }
@@ -1948,7 +1948,7 @@ struct InternalDefaultRealtimeObjectsTests {
                 // Extract the generated objectId and pre-create the object in the pool
                 if let objectID = messages.first?.operation?.objectId {
                     preCreatedObjectID = objectID
-                    _ = realtimeObjects.testsOnly_createZeroValueLiveObject(forObjectID: objectID)
+                    _ = realtimeObjects.testsOnly_createEmptyLiveObject(forObjectID: objectID)
                 }
                 // Return nil serial (conflation) — RTO20d1 says the operation should be skipped
                 return PublishResult(serials: [nil])

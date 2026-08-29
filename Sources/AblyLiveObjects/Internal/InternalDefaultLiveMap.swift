@@ -85,12 +85,12 @@ internal final class InternalDefaultLiveMap: Sendable {
         self.clock = clock
     }
 
-    /// Creates a "zero-value LiveMap", per RTLM4.
+    /// Creates a new empty LiveMap, per RTLM4.
     ///
     /// - Parameters:
-    ///   - objectID: The value to use for the RTLO3a `objectID` property.
-    ///   - semantics: The value to use for the "private `semantics` field" of RTO5c1b1b.
-    internal static func createZeroValued(
+    ///   - objectID: The `objectId` to set upon creation, per RTLM4a.
+    ///   - semantics: The `semantics` to set upon creation, per RTLM4b.
+    internal static func createEmpty(
         objectID: String,
         semantics: WireEnum<ObjectsMapSemantics>? = nil,
         logger: Logger,
@@ -779,8 +779,8 @@ internal final class InternalDefaultLiveMap: Sendable {
 
             // RTLM7g: If MapSet.value.objectId is non-empty
             if let objectId = operationData?.objectId, !objectId.isEmpty {
-                // RTLM7g1: Create a zero-value LiveObject in the internal ObjectsPool per RTO6
-                _ = objectsPool.createZeroValueObject(
+                // RTLM7g1: Create a new LiveObject in the internal ObjectsPool per RTO6
+                _ = objectsPool.createEmptyObject(
                     forObjectID: objectId,
                     logger: logger,
                     internalQueue: internalQueue,
@@ -946,7 +946,7 @@ internal final class InternalDefaultLiveMap: Sendable {
         internal mutating func resetData(userCallbackQueue: DispatchQueue) {
             // RTO4b2
             let previousData = data
-            resetDataToZeroValued()
+            resetDataToEmpty()
 
             // RTO4b2a
             let mapUpdate = DefaultLiveMapUpdate(update: previousData.mapValues { _ in .removed })
@@ -954,9 +954,10 @@ internal final class InternalDefaultLiveMap: Sendable {
         }
 
         /// Needed for ``InternalLiveObject`` conformance.
-        mutating func resetDataToZeroValued() {
-            // RTLM4
+        mutating func resetDataToEmpty() {
+            // RTLM26a
             data = [:]
+            // RTLM26b
             clearTimeserial = nil
         }
 
@@ -1055,8 +1056,8 @@ internal final class InternalDefaultLiveMap: Sendable {
         /// Converts an InternalObjectsMapEntry to LiveMapValue using the same logic as get(key:)
         /// This is used by entries to ensure consistent value conversion
         private func nosync_convertEntryToLiveMapValue(_ entry: InternalObjectsMapEntry, objectsPool: ObjectsPool) -> InternalLiveMapValue? {
-            // RTLM5d2a: If ObjectsMapEntry.tombstone is true, return undefined/null
-            if entry.tombstone == true {
+            // RTLM5d2h: If the ObjectsMapEntry is tombstoned (per RTLM14), return undefined/null
+            if Self.nosync_isEntryTombstoned(entry, objectsPool: objectsPool) {
                 return nil
             }
 
@@ -1096,11 +1097,6 @@ internal final class InternalDefaultLiveMap: Sendable {
             if let objectId = entry.data?.objectId {
                 // RTLM5d2f1: If an object with id objectId does not exist, return undefined/null
                 guard let poolEntry = objectsPool.entries[objectId] else {
-                    return nil
-                }
-
-                // RTLM5d2f3: If referenced object is tombstoned, return nil
-                if poolEntry.nosync_isTombstone {
                     return nil
                 }
 
