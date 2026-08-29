@@ -25,19 +25,22 @@ internal struct LiveObjectMutableState<Update: Sendable> {
     }
 
     /// Internal subscription storage.
-    private var subscriptionStorage = SubscriptionStorage<EventName, Update>()
+    private let subscriptionStorage: SubscriptionStorage<EventName, Update>
 
     /// Internal lifecycle event subscription storage.
-    private var lifecycleEventSubscriptionStorage = SubscriptionStorage<LiveObjectLifecycleEvent, Void>()
+    private let lifecycleEventSubscriptionStorage: SubscriptionStorage<LiveObjectLifecycleEvent, Void>
 
     internal init(
         objectID: String,
+        internalQueue: DispatchQueue,
         testsOnly_siteTimeserials siteTimeserials: [String: String]? = nil,
         testsOnly_tombstonedAt tombstonedAt: Date? = nil,
     ) {
         self.objectID = objectID
         self.siteTimeserials = siteTimeserials ?? [:]
         self.tombstonedAt = tombstonedAt
+        subscriptionStorage = SubscriptionStorage(internalQueue: internalQueue)
+        lifecycleEventSubscriptionStorage = SubscriptionStorage(internalQueue: internalQueue)
     }
 
     /// Represents parameters of an operation that `canApplyOperation` has decided can be applied to a `LiveObject`.
@@ -79,41 +82,25 @@ internal struct LiveObjectMutableState<Update: Sendable> {
 
     // MARK: - Subscriptions
 
-    internal typealias UpdateLiveObject = @Sendable (_ action: (inout Self) -> Void) -> Void
-
     @discardableResult
-    internal mutating func nosync_subscribe(listener: @escaping LiveObjectUpdateCallback<Update>, coreSDK: CoreSDK, updateSelfLater: @escaping UpdateLiveObject) throws(ARTErrorInfo) -> any AblyLiveObjects.SubscribeResponse {
+    internal func nosync_subscribe(listener: @escaping LiveObjectUpdateCallback<Update>, coreSDK: CoreSDK) throws(ARTErrorInfo) -> any AblyLiveObjects.SubscribeResponse {
         // RTLO4b2
         try coreSDK.nosync_validateChannelState(notIn: [.detached, .failed], operationDescription: "subscribe")
 
-        let updateSubscriptionStorage: SubscriptionStorage<EventName, Update>.UpdateSubscriptionStorage = { action in
-            updateSelfLater { liveObject in
-                action(&liveObject.subscriptionStorage)
-            }
-        }
-
-        return subscriptionStorage.subscribe(
+        return subscriptionStorage.nosync_subscribe(
             listener: listener,
             eventName: .update,
-            updateSelfLater: updateSubscriptionStorage,
         )
     }
 
     @discardableResult
-    internal mutating func on(event: LiveObjectLifecycleEvent, callback: @escaping LiveObjectLifecycleEventCallback, updateSelfLater: @escaping UpdateLiveObject) -> any OnLiveObjectLifecycleEventResponse {
-        let updateSubscriptionStorage: SubscriptionStorage<LiveObjectLifecycleEvent, Void>.UpdateSubscriptionStorage = { action in
-            updateSelfLater { liveObject in
-                action(&liveObject.lifecycleEventSubscriptionStorage)
-            }
-        }
-
-        let subscription = lifecycleEventSubscriptionStorage.subscribe(
+    internal func nosync_on(event: LiveObjectLifecycleEvent, callback: @escaping LiveObjectLifecycleEventCallback) -> any OnLiveObjectLifecycleEventResponse {
+        let subscription = lifecycleEventSubscriptionStorage.nosync_subscribe(
             listener: { _, subscriptionInCallback in
                 let response = LifecycleEventResponse(subscription: subscriptionInCallback)
                 callback(response)
             },
             eventName: event,
-            updateSelfLater: updateSubscriptionStorage,
         )
 
         return LifecycleEventResponse(subscription: subscription)
@@ -127,26 +114,26 @@ internal struct LiveObjectMutableState<Update: Sendable> {
         }
     }
 
-    internal mutating func unsubscribeAll() {
-        subscriptionStorage.unsubscribeAll()
+    internal func nosync_unsubscribeAll() {
+        subscriptionStorage.nosync_unsubscribeAll()
     }
 
-    internal mutating func offAll() {
-        lifecycleEventSubscriptionStorage.unsubscribeAll()
+    internal func nosync_offAll() {
+        lifecycleEventSubscriptionStorage.nosync_unsubscribeAll()
     }
 
-    internal func emit(_ update: LiveObjectUpdate<Update>, on queue: DispatchQueue) {
+    internal func nosync_emit(_ update: LiveObjectUpdate<Update>, on queue: DispatchQueue) {
         switch update {
         case .noop:
             // RTLO4b4c1
             return
         case let .update(update):
             // RTLO4b4c2
-            subscriptionStorage.emit(update, eventName: .update, on: queue)
+            subscriptionStorage.nosync_emit(update, eventName: .update, on: queue)
         }
     }
 
-    internal func emitLifecycleEvent(_ event: LiveObjectLifecycleEvent, on queue: DispatchQueue) {
-        lifecycleEventSubscriptionStorage.emit(eventName: event, on: queue)
+    internal func nosync_emitLifecycleEvent(_ event: LiveObjectLifecycleEvent, on queue: DispatchQueue) {
+        lifecycleEventSubscriptionStorage.nosync_emit(eventName: event, on: queue)
     }
 }
